@@ -94,8 +94,7 @@ def get_batch_ticker_info(symbols_with_exchange, batch_size=50, max_workers=6):
                     asynchronous=True,
                     max_workers=max_workers,
                     progress=True,
-                    validate=True,
-                    retry=3
+                    validate=True
                 )
             except TypeError as e:
                 # Fallback to basic parameters if advanced ones aren't supported
