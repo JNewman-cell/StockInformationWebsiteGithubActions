@@ -57,7 +57,7 @@ class StockRepository(BaseRepository[Stock]):
             raise DuplicateStockError(stock.symbol)
         
         insert_query = """
-        INSERT INTO STOCKS (symbol, company, exchange, created_at, last_updated_at)
+        INSERT INTO "STOCKS" (symbol, company, exchange, created_at, last_updated_at)
         VALUES (%s, %s, %s, %s, %s)
         RETURNING id, created_at, last_updated_at;
         """
@@ -101,7 +101,7 @@ class StockRepository(BaseRepository[Stock]):
         """
         select_query = """
         SELECT id, symbol, company, exchange, created_at, last_updated_at
-        FROM STOCKS
+        FROM "STOCKS"
         WHERE id = %s;
         """
         
@@ -137,7 +137,7 @@ class StockRepository(BaseRepository[Stock]):
         """
         select_query = """
         SELECT id, symbol, company, exchange, created_at, last_updated_at
-        FROM STOCKS
+        FROM "STOCKS"
         WHERE UPPER(symbol) = UPPER(%s);
         """
         
@@ -188,7 +188,7 @@ class StockRepository(BaseRepository[Stock]):
             raise StockNotFoundError(str(stock.id), "ID")
         
         update_query = """
-        UPDATE STOCKS 
+        UPDATE "STOCKS" 
         SET symbol = %s, company = %s, exchange = %s, last_updated_at = %s
         WHERE id = %s
         RETURNING last_updated_at;
@@ -232,7 +232,7 @@ class StockRepository(BaseRepository[Stock]):
         Raises:
             DatabaseQueryError: If database operation fails
         """
-        delete_query = "DELETE FROM STOCKS WHERE id = %s;"
+        delete_query = 'DELETE FROM "STOCKS" WHERE id = %s;'
         
         try:
             with self.db_manager.get_cursor_context() as cursor:
@@ -259,7 +259,7 @@ class StockRepository(BaseRepository[Stock]):
         Returns:
             True if deletion was successful, False if stock not found
         """
-        delete_query = "DELETE FROM STOCKS WHERE UPPER(symbol) = UPPER(%s);"
+        delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = UPPER(%s);'
         
         try:
             with self.db_manager.get_cursor_context() as cursor:
@@ -289,7 +289,7 @@ class StockRepository(BaseRepository[Stock]):
         """
         query = """
         SELECT id, symbol, company, exchange, created_at, last_updated_at
-        FROM STOCKS
+        FROM "STOCKS"
         ORDER BY symbol
         """
         
@@ -359,7 +359,7 @@ class StockRepository(BaseRepository[Stock]):
         
         query = """
         SELECT id, symbol, company, exchange, created_at, last_updated_at
-        FROM STOCKS
+        FROM "STOCKS"
         """
         
         if conditions:
@@ -416,7 +416,7 @@ class StockRepository(BaseRepository[Stock]):
         Returns:
             Total count of stocks
         """
-        count_query = "SELECT COUNT(*) FROM STOCKS;"
+        count_query = 'SELECT COUNT(*) FROM "STOCKS";'
         
         try:
             with self.db_manager.get_cursor_context(commit=False) as cursor:
@@ -436,7 +436,7 @@ class StockRepository(BaseRepository[Stock]):
         """
         query = """
         SELECT DISTINCT exchange 
-        FROM STOCKS 
+        FROM "STOCKS" 
         WHERE exchange IS NOT NULL 
         ORDER BY exchange;
         """
@@ -472,7 +472,7 @@ class StockRepository(BaseRepository[Stock]):
             stock.validate()
         
         insert_query = """
-        INSERT INTO STOCKS (symbol, company, exchange, created_at, last_updated_at)
+        INSERT INTO "STOCKS" (symbol, company, exchange, created_at, last_updated_at)
         VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (symbol) DO UPDATE SET
             company = EXCLUDED.company,
