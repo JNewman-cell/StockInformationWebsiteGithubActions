@@ -30,7 +30,7 @@ jobs:
       id: cache
       with:
         path: .venv
-        key: venv-${{ runner.os }}-py312-${{ hashFiles('Scripts/requirements.txt') }}
+        key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           venv-${{ runner.os }}-py312-
 
