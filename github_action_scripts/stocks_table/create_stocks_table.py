@@ -7,65 +7,48 @@ import time
 from datetime import datetime
 import logging
 
+# Add the project root to the Python path for data layer imports
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
+
+# Import data layer components
+from data_layer import (
+    DatabaseConnectionManager,
+    StockRepository,
+    Stock,
+    StockNotFoundError,
+    DuplicateStockError,
+    ValidationError,
+    DatabaseQueryError
+)
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def create_database_connection(connection_string):
-    """Create a connection to the PostgreSQL database."""
+def check_database_connectivity(db_manager, stock_repo):
+    """Check database connectivity and table structure using data layer."""
     try:
-        conn = psycopg2.connect(connection_string)
-        logger.info("Successfully connected to the database")
-        return conn
-    except Exception as e:
-        logger.error(f"Error connecting to database: {e}")
-        return None
-
-def check_stocks_table(conn):
-    """Check if the STOCKS table exists and has the expected structure."""
-    check_table_query = """
-    SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'STOCKS'
-    );
-    """
-    
-    try:
-        cursor = conn.cursor()
-        cursor.execute(check_table_query)
-        table_exists = cursor.fetchone()[0]
-        
-        if not table_exists:
-            cursor.close()
-            logger.error("STOCKS table does not exist in the database")
+        # Test database connection
+        if not db_manager.test_connection():
+            logger.error("Database connection test failed")
             return False
         
-        # Check if the table has the expected columns
-        check_columns_query = """
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'STOCKS' AND table_schema = 'public'
-        ORDER BY ordinal_position;
-        """
+        logger.info("✓ Database connection successful")
         
-        cursor.execute(check_columns_query)
-        columns = cursor.fetchall()
-        cursor.close()
-        
-        expected_columns = ['id', 'symbol', 'company', 'exchange', 'created_at', 'last_updated_at']
-        actual_columns = [col[0] for col in columns]
-        
-        missing_columns = [col for col in expected_columns if col not in actual_columns]
-        if missing_columns:
-            logger.error(f"STOCKS table is missing required columns: {missing_columns}")
+        # Test repository functionality by getting count
+        # This will validate that the STOCKS table exists and has the correct structure
+        try:
+            count = stock_repo.count()
+            logger.info(f"✓ STOCKS table accessible with {count} existing records")
+            return True
+        except Exception as e:
+            logger.error(f"✗ STOCKS table validation failed: {e}")
+            logger.error("Please ensure the STOCKS table exists with the required schema")
             return False
-        
-        logger.info(f"STOCKS table exists with columns: {actual_columns}")
-        return True
-        
+            
     except Exception as e:
-        logger.error(f"Error checking table: {e}")
+        logger.error(f"Database connectivity check failed: {e}")
         return False
 
 def get_batch_ticker_info(symbols_with_exchange, batch_size=50, max_workers=6):
@@ -218,35 +201,59 @@ def get_individual_ticker_info(ticker, exchange=None):
         logger.error(f"Error fetching data for {ticker}: {e}")
         return None
 
-def insert_or_update_ticker(conn, ticker_data):
-    """Insert or update ticker data in the database."""
-    insert_query = """
-    INSERT INTO STOCKS (symbol, company, exchange, created_at, last_updated_at)
-    VALUES (%s, %s, %s, %s, %s)
-    ON CONFLICT (symbol) 
-    DO UPDATE SET 
-        company = EXCLUDED.company,
-        exchange = EXCLUDED.exchange,
-        last_updated_at = EXCLUDED.last_updated_at;
-    """
+def process_stocks_batch(stock_repo, ticker_batch):
+    """Process a batch of ticker data using the data layer."""
+    successful_updates = 0
+    failed_updates = 0
     
-    try:
-        cursor = conn.cursor()
-        current_time = datetime.now()
-        cursor.execute(insert_query, (
-            ticker_data['symbol'],
-            ticker_data['company'],
-            ticker_data['exchange'],
-            current_time,
-            current_time
-        ))
-        conn.commit()
-        cursor.close()
-        logger.info(f"Successfully inserted/updated symbol: {ticker_data['symbol']}")
-        return True
-    except Exception as e:
-        logger.error(f"Error inserting/updating symbol {ticker_data['symbol']}: {e}")
-        return False
+    # Convert ticker data to Stock objects
+    stocks_to_process = []
+    
+    for ticker_data in ticker_batch:
+        try:
+            # Create Stock object with validation
+            stock = Stock(
+                symbol=ticker_data['symbol'],
+                company=ticker_data.get('company'),
+                exchange=ticker_data.get('exchange')
+            )
+            stocks_to_process.append(stock)
+        except ValidationError as e:
+            logger.warning(f"Skipping invalid stock data for {ticker_data.get('symbol', 'UNKNOWN')}: {e}")
+            failed_updates += 1
+            continue
+    
+    # Use bulk insert with conflict resolution (upsert behavior)
+    if stocks_to_process:
+        try:
+            created_stocks = stock_repo.bulk_insert(stocks_to_process)
+            successful_updates = len(created_stocks)
+            logger.info(f"Bulk processed {successful_updates} stocks successfully")
+        except Exception as e:
+            logger.error(f"Bulk insert failed, falling back to individual processing: {e}")
+            # Fall back to individual processing
+            for stock in stocks_to_process:
+                try:
+                    # Try to create, if it exists, update it
+                    existing_stock = stock_repo.get_by_symbol(stock.symbol)
+                    if existing_stock:
+                        # Update existing stock
+                        existing_stock.company = stock.company
+                        existing_stock.exchange = stock.exchange
+                        stock_repo.update(existing_stock)
+                        logger.debug(f"Updated existing stock: {stock.symbol}")
+                    else:
+                        # Create new stock
+                        stock_repo.create(stock)
+                        logger.debug(f"Created new stock: {stock.symbol}")
+                    
+                    successful_updates += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error processing individual stock {stock.symbol}: {e}")
+                    failed_updates += 1
+    
+    return successful_updates, failed_updates
 
 def process_ticker_file(file_path):
     """Process a ticker file and return list of tickers with exchange info."""
@@ -272,73 +279,99 @@ def process_ticker_file(file_path):
         return []
 
 def main():
-    """Main function to process tickers and update database."""
+    """Main function to process tickers and update database using data layer."""
     if len(sys.argv) < 2:
         logger.error("Usage: python create_stocks_table.py <ticker_file1> [ticker_file2] ...")
         sys.exit(1)
     
-    # Get database connection string from environment
-    connection_string = os.getenv('DATABASE_URL')
-    if not connection_string:
-        logger.error("DATABASE_URL environment variable not set")
+    # Initialize data layer components
+    try:
+        logger.info("Initializing data layer...")
+        db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
+        stock_repo = StockRepository(db_manager)
+        
+        # Check database connectivity and table structure
+        if not check_database_connectivity(db_manager, stock_repo):
+            logger.error("Cannot proceed without proper database setup.")
+            sys.exit(1)
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize data layer: {e}")
         sys.exit(1)
     
-    # Connect to database
-    conn = create_database_connection(connection_string)
-    if not conn:
+    try:
+        # Process all ticker files
+        all_tickers = []
+        for file_path in sys.argv[1:]:
+            if os.path.exists(file_path):
+                tickers = process_ticker_file(file_path)
+                all_tickers.extend(tickers)
+            else:
+                logger.warning(f"Ticker file not found: {file_path}")
+        
+        if not all_tickers:
+            logger.error("No ticker files found or no tickers loaded")
+            sys.exit(1)
+        
+        # Remove duplicates (keep first occurrence with exchange info)
+        seen_symbols = set()
+        unique_tickers = []
+        for symbol, exchange in all_tickers:
+            if symbol not in seen_symbols:
+                unique_tickers.append((symbol, exchange))
+                seen_symbols.add(symbol)
+        
+        logger.info(f"Processing {len(unique_tickers)} unique symbols using batch processing")
+        
+        # Use batch processing to get ticker data with optimized batch size
+        # Batch size of 50 with 6 workers = ~8 symbols per worker, which is more reasonable
+        all_ticker_data = get_batch_ticker_info(unique_tickers, batch_size=50, max_workers=6)
+        
+        logger.info(f"Retrieved data for {len(all_ticker_data)} symbols with valid market cap data")
+        
+        # Process tickers in batches for better performance and error handling
+        batch_size = 100  # Process database operations in batches of 100
+        total_successful = 0
+        total_failed = 0
+        
+        for i in range(0, len(all_ticker_data), batch_size):
+            batch = all_ticker_data[i:i + batch_size]
+            logger.info(f"Processing database batch {i//batch_size + 1}/{(len(all_ticker_data) + batch_size - 1)//batch_size} ({len(batch)} stocks)")
+            
+            batch_successful, batch_failed = process_stocks_batch(stock_repo, batch)
+            total_successful += batch_successful
+            total_failed += batch_failed
+        
+        # Calculate skipped symbols
+        skipped_symbols = len(unique_tickers) - len(all_ticker_data)
+        logger.info(f"Skipped {skipped_symbols} symbols due to missing market cap data or API errors")
+        
+        # Final summary
+        logger.info(f"Processing complete. Successful: {total_successful}, Failed: {total_failed}")
+        print(f"Processing complete. Successfully processed {total_successful} symbols.")
+        
+        # Get final database statistics
+        try:
+            final_count = stock_repo.count()
+            exchanges = stock_repo.get_exchanges()
+            logger.info(f"Final database statistics: {final_count} total stocks across {len(exchanges)} exchanges")
+            logger.info(f"Exchanges: {', '.join(exchanges) if exchanges else 'None'}")
+        except Exception as e:
+            logger.warning(f"Could not retrieve final statistics: {e}")
+    
+    except Exception as e:
+        logger.error(f"Error during processing: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
     
-    # Check that the STOCKS table exists
-    if not check_stocks_table(conn):
-        conn.close()
-        logger.error("Cannot proceed without the STOCKS table. Please ensure it exists in the database.")
-        sys.exit(1)
-    
-    # Process all ticker files
-    all_tickers = []
-    for file_path in sys.argv[1:]:
-        if os.path.exists(file_path):
-            tickers = process_ticker_file(file_path)
-            all_tickers.extend(tickers)
-        else:
-            logger.warning(f"Ticker file not found: {file_path}")
-    
-    # Remove duplicates (keep first occurrence with exchange info)
-    seen_symbols = set()
-    unique_tickers = []
-    for symbol, exchange in all_tickers:
-        if symbol not in seen_symbols:
-            unique_tickers.append((symbol, exchange))
-            seen_symbols.add(symbol)
-    
-    logger.info(f"Processing {len(unique_tickers)} unique symbols using batch processing")
-    
-    # Use batch processing to get ticker data with optimized batch size
-    # Batch size of 50 with 6 workers = ~8 symbols per worker, which is more reasonable
-    all_ticker_data = get_batch_ticker_info(unique_tickers, batch_size=50, max_workers=6)
-    
-    logger.info(f"Retrieved data for {len(all_ticker_data)} symbols with valid market cap data")
-    
-    # Process each ticker for database insertion
-    successful_updates = 0
-    failed_updates = 0
-    
-    for ticker_data in all_ticker_data:
-        # Insert/update in database
-        if insert_or_update_ticker(conn, ticker_data):
-            successful_updates += 1
-        else:
-            failed_updates += 1
-    
-    # Calculate skipped symbols
-    skipped_symbols = len(unique_tickers) - len(all_ticker_data)
-    logger.info(f"Skipped {skipped_symbols} symbols due to missing market cap data or API errors")
-    
-    # Close database connection
-    conn.close()
-    
-    logger.info(f"Processing complete. Successful: {successful_updates}, Failed: {failed_updates}")
-    print(f"Processing complete. Successfully processed {successful_updates} symbols.")
+    finally:
+        # Clean up database connections
+        try:
+            db_manager.close_all_connections()
+            logger.info("Database connections closed")
+        except Exception as e:
+            logger.warning(f"Error closing database connections: {e}")
 
 if __name__ == "__main__":
     main()
