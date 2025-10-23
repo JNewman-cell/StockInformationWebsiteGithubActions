@@ -18,8 +18,9 @@ This project automatically updates a PostgreSQL database with stock ticker infor
 
 ### 2. Database Schema
 
-The script will work with your existing `stocks` table structure:
+**Important**: The `stocks` table must already exist in your database. The script will verify the table exists and has the expected structure before processing any data.
 
+Required table structure:
 ```sql
 CREATE TABLE stocks (
     id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
@@ -32,6 +33,8 @@ CREATE TABLE stocks (
     CONSTRAINT STOCKS_pkey PRIMARY KEY (id)
 );
 ```
+
+The script will check for the existence of all required columns: `id`, `symbol`, `company`, `exchange`, `created_at`, and `last_updated_at`.
 
 ### 3. How it Works
 

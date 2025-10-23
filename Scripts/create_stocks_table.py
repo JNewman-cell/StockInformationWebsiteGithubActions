@@ -21,30 +21,51 @@ def create_database_connection(connection_string):
         logger.error(f"Error connecting to database: {e}")
         return None
 
-def create_stocks_table(conn):
-    """Create the stocks table if it doesn't exist."""
-    create_table_query = """
-    CREATE TABLE IF NOT EXISTS stocks (
-        id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-        symbol VARCHAR(20) UNIQUE NOT NULL,
-        company TEXT,
-        exchange VARCHAR(10),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT unique_symbol UNIQUE (symbol),
-        CONSTRAINT STOCKS_pkey PRIMARY KEY (id)
+def check_stocks_table(conn):
+    """Check if the stocks table exists and has the expected structure."""
+    check_table_query = """
+    SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'stocks'
     );
     """
     
     try:
         cursor = conn.cursor()
-        cursor.execute(create_table_query)
-        conn.commit()
+        cursor.execute(check_table_query)
+        table_exists = cursor.fetchone()[0]
+        
+        if not table_exists:
+            cursor.close()
+            logger.error("Stocks table does not exist in the database")
+            return False
+        
+        # Check if the table has the expected columns
+        check_columns_query = """
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'stocks' AND table_schema = 'public'
+        ORDER BY ordinal_position;
+        """
+        
+        cursor.execute(check_columns_query)
+        columns = cursor.fetchall()
         cursor.close()
-        logger.info("Stocks table created or already exists")
+        
+        expected_columns = ['id', 'symbol', 'company', 'exchange', 'created_at', 'last_updated_at']
+        actual_columns = [col[0] for col in columns]
+        
+        missing_columns = [col for col in expected_columns if col not in actual_columns]
+        if missing_columns:
+            logger.error(f"Stocks table is missing required columns: {missing_columns}")
+            return False
+        
+        logger.info(f"Stocks table exists with columns: {actual_columns}")
         return True
+        
     except Exception as e:
-        logger.error(f"Error creating table: {e}")
+        logger.error(f"Error checking table: {e}")
         return False
 
 def get_batch_ticker_info(symbols_with_exchange, batch_size=50, max_workers=6):
@@ -263,9 +284,10 @@ def main():
     if not conn:
         sys.exit(1)
     
-    # Create table
-    if not create_stocks_table(conn):
+    # Check that the stocks table exists
+    if not check_stocks_table(conn):
         conn.close()
+        logger.error("Cannot proceed without the stocks table. Please ensure it exists in the database.")
         sys.exit(1)
     
     # Process all ticker files
