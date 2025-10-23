@@ -18,11 +18,11 @@ This project automatically updates a PostgreSQL database with stock ticker infor
 
 ### 2. Database Schema
 
-**Important**: The `stocks` table must already exist in your database. The script will verify the table exists and has the expected structure before processing any data.
+**Important**: The `STOCKS` table must already exist in your database. The script will verify the table exists and has the expected structure before processing any data.
 
 Required table structure:
 ```sql
-CREATE TABLE stocks (
+CREATE TABLE STOCKS (
     id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     symbol VARCHAR(20) UNIQUE NOT NULL,
     company TEXT,

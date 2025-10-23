@@ -22,12 +22,12 @@ def create_database_connection(connection_string):
         return None
 
 def check_stocks_table(conn):
-    """Check if the stocks table exists and has the expected structure."""
+    """Check if the STOCKS table exists and has the expected structure."""
     check_table_query = """
     SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name = 'stocks'
+        AND table_name = 'STOCKS'
     );
     """
     
@@ -38,14 +38,14 @@ def check_stocks_table(conn):
         
         if not table_exists:
             cursor.close()
-            logger.error("Stocks table does not exist in the database")
+            logger.error("STOCKS table does not exist in the database")
             return False
         
         # Check if the table has the expected columns
         check_columns_query = """
         SELECT column_name, data_type 
         FROM information_schema.columns 
-        WHERE table_name = 'stocks' AND table_schema = 'public'
+        WHERE table_name = 'STOCKS' AND table_schema = 'public'
         ORDER BY ordinal_position;
         """
         
@@ -58,10 +58,10 @@ def check_stocks_table(conn):
         
         missing_columns = [col for col in expected_columns if col not in actual_columns]
         if missing_columns:
-            logger.error(f"Stocks table is missing required columns: {missing_columns}")
+            logger.error(f"STOCKS table is missing required columns: {missing_columns}")
             return False
         
-        logger.info(f"Stocks table exists with columns: {actual_columns}")
+        logger.info(f"STOCKS table exists with columns: {actual_columns}")
         return True
         
     except Exception as e:
@@ -217,7 +217,7 @@ def get_individual_ticker_info(ticker, exchange=None):
 def insert_or_update_ticker(conn, ticker_data):
     """Insert or update ticker data in the database."""
     insert_query = """
-    INSERT INTO stocks (symbol, company, exchange, created_at, last_updated_at)
+    INSERT INTO STOCKS (symbol, company, exchange, created_at, last_updated_at)
     VALUES (%s, %s, %s, %s, %s)
     ON CONFLICT (symbol) 
     DO UPDATE SET 
@@ -284,10 +284,10 @@ def main():
     if not conn:
         sys.exit(1)
     
-    # Check that the stocks table exists
+    # Check that the STOCKS table exists
     if not check_stocks_table(conn):
         conn.close()
-        logger.error("Cannot proceed without the stocks table. Please ensure it exists in the database.")
+        logger.error("Cannot proceed without the STOCKS table. Please ensure it exists in the database.")
         sys.exit(1)
     
     # Process all ticker files
