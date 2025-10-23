@@ -1,0 +1,306 @@
+"""
+Stock table synchronization script.
+
+This script synchronizes stock data from ticker files with the database using a deterministic approach.
+It compares the current database state with the source ticker files and performs necessary operations:
+- Adds stocks from sources that are not in the database (after validation)
+- Removes stocks from database that are no longer in sources
+- Updates stocks that exist in both but have different data
+"""
+
+import logging
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Dict, List, Set, Tuple, Optional
+
+# Add data layer to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from data_layer import (
+    DatabaseConnectionManager,
+    StockRepository,
+    Stock,
+    ValidationError,
+)
+from utils.utils import (
+    parse_ticker_symbols_from_exchange_file,
+    load_and_deduplicate_ticker_symbols_from_files,
+    validate_stock_symbols_market_cap_via_yahoo_finance_api,
+    compare_existing_stocks_with_yahoo_finance_data_for_updates,
+)
+from entities.synchronization_result import SynchronizationResult
+from transformer.transformer import analyze_database_vs_source_symbols_for_synchronization_operations
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+def perform_synchronization_operations(stock_repo, sync_result) -> Dict[str, int]:
+    """
+    Execute the synchronization operations determined by the analysis.
+    
+    Args:
+        stock_repo: Stock repository instance
+        sync_result: SynchronizationResult containing operations to perform
+        
+    Returns:
+        Dictionary with operation counts and results
+    """
+    results = {
+        'added': 0,
+        'deleted': 0,
+        'updated': 0,
+        'add_failures': 0,
+        'delete_failures': 0,
+        'update_failures': 0
+    }
+    
+    # 1. Delete stocks that are no longer in the source
+    if sync_result.to_delete:
+        logger.info(f"Deleting {len(sync_result.to_delete)} stocks no longer in source data")
+        for symbol in sync_result.to_delete:
+            try:
+                success = stock_repo.delete_by_symbol(symbol)
+                if success:
+                    results['deleted'] += 1
+                    logger.debug(f"Deleted stock: {symbol}")
+                else:
+                    results['delete_failures'] += 1
+                    logger.warning(f"Failed to delete stock (not found): {symbol}")
+            except Exception as e:
+                results['delete_failures'] += 1
+                logger.error(f"Error deleting stock {symbol}: {e}")
+    
+    # 2. Add new stocks (with validation)
+    if sync_result.to_add:
+        logger.info(f"Adding {len(sync_result.to_add)} new stocks after validation")
+        valid_stocks, validation_failures = validate_stock_symbols_market_cap_via_yahoo_finance_api(sync_result.to_add)
+        sync_result.validation_failures.extend(validation_failures)
+        
+        if valid_stocks:
+            try:
+                # Convert validated data to Stock objects
+                stocks_to_add = []
+                for stock_data in valid_stocks:
+                    stock = Stock(
+                        symbol=stock_data['symbol'],
+                        company=stock_data.get('company'),
+                        exchange=stock_data.get('exchange')
+                    )
+                    stocks_to_add.append(stock)
+                
+                # Use bulk insert
+                created_stocks = stock_repo.bulk_insert(stocks_to_add)
+                results['added'] = len(created_stocks)
+                logger.info(f"Successfully added {results['added']} new stocks")
+                
+            except Exception as e:
+                logger.error(f"Error in bulk insert of new stocks: {e}")
+                # Fall back to individual insert
+                for stock_data in valid_stocks:
+                    try:
+                        stock = Stock(
+                            symbol=stock_data['symbol'],
+                            company=stock_data.get('company'),
+                            exchange=stock_data.get('exchange')
+                        )
+                        stock_repo.create(stock)
+                        results['added'] += 1
+                    except Exception as e:
+                        results['add_failures'] += 1
+                        logger.error(f"Error adding individual stock {stock_data['symbol']}: {e}")
+    
+    # 3. Update existing stocks
+    if sync_result.to_update:
+        logger.info(f"Updating {len(sync_result.to_update)} existing stocks")
+        
+        # Check which stocks need Yahoo data updates
+        stocks_needing_yahoo_updates, yahoo_failures = compare_existing_stocks_with_yahoo_finance_data_for_updates(sync_result.to_update)
+        
+        # Update all stocks (including those with just exchange changes)
+        all_updates = sync_result.to_update + stocks_needing_yahoo_updates
+        
+        for stock in all_updates:
+            try:
+                # Ensure last_updated_at is set
+                if stock.last_updated_at is None or stock.last_updated_at == stock.created_at:
+                    stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                
+                stock_repo.update(stock)
+                results['updated'] += 1
+                logger.debug(f"Updated stock: {stock.symbol}")
+                
+            except Exception as e:
+                results['update_failures'] += 1
+                logger.error(f"Error updating stock {stock.symbol}: {e}")
+    
+    # Update unchanged stocks' timestamps (to mark them as "checked")
+    if sync_result.unchanged:
+        logger.info(f"Updating timestamps for {len(sync_result.unchanged)} unchanged stocks")
+        for symbol in sync_result.unchanged:
+            try:
+                existing_stock = stock_repo.get_by_symbol(symbol)
+                if existing_stock:
+                    existing_stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    stock_repo.update(existing_stock)
+            except Exception as e:
+                logger.warning(f"Error updating timestamp for unchanged stock {symbol}: {e}")
+    
+    logger.info(f"Synchronization operations complete: {results}")
+    return results
+
+def check_database_connectivity(db_manager, stock_repo):
+    """Check database connectivity and table structure using data layer.
+    
+    Args:
+        db_manager: Database connection manager
+        stock_repo: Stock repository instance
+        
+    Returns:
+        bool: True if database is accessible, False otherwise
+    """
+    try:
+        if not db_manager.test_connection():
+            logger.error("Database connection test failed")
+            return False
+        
+        logger.info("✓ Database connection successful")
+        
+        # Test repository functionality by getting count
+        # This will validate that the STOCKS table exists and has the correct structure
+        try:
+            count = stock_repo.count()
+            logger.info(f"✓ STOCKS table accessible with {count} existing records")
+            return True
+        except Exception as e:
+            logger.error(f"✗ STOCKS table validation failed: {e}")
+            logger.error("Please ensure the STOCKS table exists with the required schema")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Database connectivity check failed: {e}")
+        return False
+
+def print_final_synchronization_statistics(stock_repo, operation_results, sync_result):
+    """Print final synchronization statistics.
+    
+    Args:
+        stock_repo: Stock repository instance
+        operation_results: Dictionary with operation counts
+        sync_result: SynchronizationResult with details
+    """
+    logger.info("=== Synchronization Complete ===")
+    
+    # Print operation results
+    logger.info(f"""
+Operation Results:
+  - Added: {operation_results['added']} stocks
+  - Deleted: {operation_results['deleted']} stocks  
+  - Updated: {operation_results['updated']} stocks
+  - Add failures: {operation_results['add_failures']}
+  - Delete failures: {operation_results['delete_failures']}
+  - Update failures: {operation_results['update_failures']}
+  - Validation failures: {len(sync_result.validation_failures)}
+    """)
+    
+    if sync_result.validation_failures:
+        logger.warning(f"Failed validation for symbols: {', '.join(sync_result.validation_failures[:10])}"
+                      f"{'...' if len(sync_result.validation_failures) > 10 else ''}")
+    
+    # Print success summary
+    total_operations = (operation_results['added'] + operation_results['deleted'] + 
+                       operation_results['updated'])
+    print(f"\nSynchronization completed successfully!")
+    print(f"Total operations performed: {total_operations}")
+    print(f"  - {operation_results['added']} stocks added")
+    print(f"  - {operation_results['deleted']} stocks deleted") 
+    print(f"  - {operation_results['updated']} stocks updated")
+    
+    # Get final database statistics
+    try:
+        final_count = stock_repo.count()
+        exchanges = stock_repo.get_exchanges()
+        logger.info(f"Final database state: {final_count} stocks across {len(exchanges)} exchanges")
+        logger.info(f"Exchanges: {', '.join(exchanges) if exchanges else 'None'}")
+        print(f"\nFinal database state: {final_count} total stocks")
+        if exchanges:
+            print(f"Exchanges: {', '.join(exchanges)}")
+    except Exception as e:
+        logger.warning(f"Could not retrieve final statistics: {e}")
+
+
+def main():
+    """Main function for deterministic stock synchronization."""
+    if len(sys.argv) < 2:
+        logger.error("Usage: python sync_stocks_table.py <ticker_file1> [ticker_file2] ...")
+        sys.exit(1)
+    
+    # Initialize data layer components
+    try:
+        logger.info("Initializing data layer...")
+        db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
+        stock_repo = StockRepository(db_manager)
+        
+        # Check database connectivity and table structure
+        if not check_database_connectivity(db_manager, stock_repo):
+            logger.error("Cannot proceed without proper database setup.")
+            sys.exit(1)
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize data layer: {e}")
+        sys.exit(1)
+    
+    try:
+        logger.info("=== Starting Deterministic Stock Synchronization ===")
+        
+        # 1. Load ticker files (data sources - our source of truth)
+        logger.info("Loading ticker files...")
+        source_tickers = load_and_deduplicate_ticker_symbols_from_files(sys.argv[1:], parse_ticker_symbols_from_exchange_file)
+        source_symbols = set(source_tickers)  # Convert to set for efficient operations
+        
+        logger.info(f"Loaded {len(source_symbols)} unique symbols from {len(sys.argv[1:])} source files")
+        
+        # 2. Get current database state
+        logger.info("Retrieving current database state...")
+        database_stocks = stock_repo.get_all_symbols()
+        
+        logger.info(f"Found {len(database_stocks)} stocks currently in database")
+        
+        # 3. Compare and determine synchronization operations
+        logger.info("Analyzing differences between sources and database...")
+        sync_result = analyze_database_vs_source_symbols_for_synchronization_operations(database_stocks, source_symbols)
+        
+        stats = sync_result.get_stats()
+        logger.info(f"""
+Synchronization Analysis Results:
+  - Stocks to ADD (new in sources): {stats['to_add']}
+  - Stocks to DELETE (removed from sources): {stats['to_delete']}
+  - Stocks to UPDATE (changed data): {stats['to_update']}
+  - Stocks UNCHANGED: {stats['unchanged']}
+        """)
+        
+        # 4. Perform synchronization operations
+        logger.info("Executing synchronization operations...")
+        operation_results = perform_synchronization_operations(stock_repo, sync_result)
+        
+        # 5. Print final statistics
+        print_final_synchronization_statistics(stock_repo, operation_results, sync_result)
+    
+    except Exception as e:
+        logger.error(f"Error during synchronization: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    
+    finally:
+        # Clean up database connections
+        try:
+            db_manager.close_all_connections()
+            logger.info("Database connections closed")
+        except Exception as e:
+            logger.warning(f"Error closing database connections: {e}")
+
+if __name__ == "__main__":
+    main()

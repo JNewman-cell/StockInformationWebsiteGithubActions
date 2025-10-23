@@ -1,4 +1,4 @@
-name: Create Stocks Table
+name: Sync Stocks Table
 
 on:
   schedule:

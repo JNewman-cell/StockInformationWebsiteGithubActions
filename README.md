@@ -38,12 +38,29 @@ The script will check for the existence of all required columns: `id`, `symbol`,
 
 ### 3. How it Works
 
+The system now uses a **deterministic synchronization approach** that treats the ticker files as the source of truth:
+
+#### Synchronization Strategy
 1. **Scheduled Run**: The workflow runs daily at 7:00 AM UTC
 2. **Manual Trigger**: You can manually trigger the workflow from the Actions tab
-3. **Ticker Sources**: Downloads latest NYSE and NASDAQ ticker lists
-3. **Data Validation**: Only adds symbols that have valid market cap data from Yahoo Finance
-4. **Exchange Detection**: Automatically detects NYSE/NASDAQ from filename
-5. **Upsert Logic**: Updates existing symbols or inserts new ones
+3. **Ticker Sources**: Downloads latest NYSE and NASDAQ ticker lists (source of truth)
+4. **Three-Way Analysis**: Compares database state with ticker sources to determine:
+   - **ADD**: Stocks in sources but not in database → Add after validation
+   - **DELETE**: Stocks in database but not in sources → Remove from database  
+   - **UPDATE**: Stocks in both but with different data → Update with latest info
+
+#### Data Operations
+- **Adding New Stocks**: Validates via Yahoo Finance API (checks for valid market cap)
+- **Updating Existing Stocks**: Compares company names and exchange info with Yahoo data
+- **Deleting Removed Stocks**: Removes stocks no longer listed in source exchanges
+- **Timestamp Management**: Updates `last_updated_at` for all processed stocks
+- **Exchange Detection**: Automatically detects NYSE/NASDAQ from filename
+
+#### Key Features
+- **Deterministic**: Same inputs always produce same database state
+- **Data Integrity**: Yahoo Finance validation prevents invalid tickers
+- **Efficient**: Batch processing with API rate limiting
+- **Comprehensive**: Handles additions, updates, and deletions in single run
 
 ### 4. Local Development
 

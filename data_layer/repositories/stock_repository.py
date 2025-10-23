@@ -450,6 +450,42 @@ class StockRepository(BaseRepository[Stock]):
         except Exception as e:
             raise DatabaseQueryError("get exchanges", str(e))
     
+    def get_all_symbols(self) -> Dict[str, Stock]:
+        """
+        Get all symbols from the database as a dictionary for efficient lookup.
+        
+        Returns:
+            Dictionary mapping symbol to Stock object
+        """
+        query = """
+        SELECT id, symbol, company, exchange, created_at, last_updated_at
+        FROM "STOCKS"
+        ORDER BY symbol;
+        """
+        
+        try:
+            with self.db_manager.get_cursor_context(commit=False) as cursor:
+                cursor.execute(query)
+                results = cursor.fetchall()
+                
+                symbols_dict = {}
+                for row in results:
+                    stock = Stock(
+                        id=row[0],
+                        symbol=row[1],
+                        company=row[2],
+                        exchange=row[3],
+                        created_at=row[4],
+                        last_updated_at=row[5]
+                    )
+                    symbols_dict[stock.symbol] = stock
+                
+                self.logger.info(f"Retrieved {len(symbols_dict)} symbols from database")
+                return symbols_dict
+                
+        except Exception as e:
+            raise DatabaseQueryError("get all symbols", str(e))
+    
     def bulk_insert(self, stocks: List[Stock]) -> List[Stock]:
         """
         Insert multiple stocks in a single transaction.
