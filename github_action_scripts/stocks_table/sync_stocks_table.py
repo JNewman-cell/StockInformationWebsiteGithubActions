@@ -136,17 +136,59 @@ def perform_synchronization_operations(stock_repo, sync_result) -> Dict[str, int
                 results['update_failures'] += 1
                 logger.error(f"Error updating stock {stock.symbol}: {e}")
     
-    # Update unchanged stocks' timestamps (to mark them as "checked")
+    # Verify and update "unchanged" stocks by checking Yahoo Finance data
     if sync_result.unchanged:
-        logger.info(f"Updating timestamps for {len(sync_result.unchanged)} unchanged stocks")
+        logger.info(f"Verifying {len(sync_result.unchanged)} unchanged stocks against Yahoo Finance API")
+        
+        # Get the unchanged stock objects from database for data comparison
+        unchanged_stocks = []
         for symbol in sync_result.unchanged:
             try:
                 existing_stock = stock_repo.get_by_symbol(symbol)
                 if existing_stock:
-                    existing_stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                    stock_repo.update(existing_stock)
+                    unchanged_stocks.append(existing_stock)
             except Exception as e:
-                logger.warning(f"Error updating timestamp for unchanged stock {symbol}: {e}")
+                logger.warning(f"Error retrieving unchanged stock {symbol}: {e}")
+        
+        if unchanged_stocks:
+            # Check which "unchanged" stocks actually need updates based on Yahoo data
+            stocks_needing_data_updates, yahoo_failures = compare_existing_stocks_with_yahoo_finance_data_for_updates(unchanged_stocks)
+            
+            if stocks_needing_data_updates:
+                logger.info(f"Found {len(stocks_needing_data_updates)} unchanged stocks that need data updates from Yahoo")
+                # Update stocks that have different data in Yahoo Finance
+                for stock in stocks_needing_data_updates:
+                    try:
+                        stock_repo.update(stock)
+                        results['updated'] += 1
+                        logger.debug(f"Updated unchanged stock with new data: {stock.symbol}")
+                    except Exception as e:
+                        results['update_failures'] += 1
+                        logger.error(f"Error updating unchanged stock {stock.symbol}: {e}")
+            
+            # Get list of truly unchanged stocks (those that didn't need Yahoo data updates)
+            updated_symbols = {stock.symbol for stock in stocks_needing_data_updates}
+            truly_unchanged = [symbol for symbol in sync_result.unchanged if symbol not in updated_symbols]
+            
+            if truly_unchanged:
+                logger.info(f"Updating timestamps for {len(truly_unchanged)} truly unchanged stocks using batch operation")
+                try:
+                    updated_count = stock_repo.bulk_update_timestamps(truly_unchanged)
+                    logger.info(f"Successfully updated timestamps for {updated_count} truly unchanged stocks")
+                except Exception as e:
+                    logger.error(f"Error in batch timestamp update, falling back to individual updates: {e}")
+                    # Fall back to individual updates if batch fails
+                    success_count = 0
+                    for symbol in truly_unchanged:
+                        try:
+                            existing_stock = stock_repo.get_by_symbol(symbol)
+                            if existing_stock:
+                                existing_stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                                stock_repo.update(existing_stock)
+                                success_count += 1
+                        except Exception as e:
+                            logger.warning(f"Error updating timestamp for unchanged stock {symbol}: {e}")
+                    logger.info(f"Individual fallback updates completed: {success_count} successful")
     
     logger.info(f"Synchronization operations complete: {results}")
     return results

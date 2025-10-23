@@ -550,3 +550,38 @@ class StockRepository(BaseRepository[Stock]):
             
         except Exception as e:
             raise DatabaseQueryError("bulk insert stocks", str(e))
+    
+    def bulk_update_timestamps(self, symbols: List[str]) -> int:
+        """
+        Update last_updated_at timestamp for multiple stocks by symbol in a single operation.
+        
+        Args:
+            symbols: List of stock symbols to update timestamps for
+        
+        Returns:
+            Number of stocks updated
+        
+        Raises:
+            DatabaseQueryError: If database operation fails
+        """
+        if not symbols:
+            return 0
+        
+        update_query = """
+        UPDATE "STOCKS" 
+        SET last_updated_at = %s 
+        WHERE symbol = ANY(%s);
+        """
+        
+        try:
+            current_time = datetime.now()
+            
+            with self.db_manager.get_cursor_context() as cursor:
+                cursor.execute(update_query, (current_time, symbols))
+                updated_count = cursor.rowcount
+                
+                self.logger.info(f"Bulk updated timestamps for {updated_count} stocks")
+                return updated_count
+                
+        except Exception as e:
+            raise DatabaseQueryError("bulk update timestamps", str(e))
