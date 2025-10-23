@@ -7,10 +7,6 @@ import time
 from datetime import datetime
 import logging
 
-# Add the project root to the Python path for data layer imports
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
-
 # Import data layer components
 from data_layer import (
     DatabaseConnectionManager,

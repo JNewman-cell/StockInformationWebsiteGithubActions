@@ -11,6 +11,7 @@ from .database.connection_manager import DatabaseConnectionManager
 from .exceptions import (
     DataLayerError,
     DatabaseConnectionError,
+    DatabaseQueryError,
     StockNotFoundError,
     DuplicateStockError,
     ValidationError
@@ -23,6 +24,7 @@ __all__ = [
     "DatabaseConnectionManager",
     "DataLayerError",
     "DatabaseConnectionError",
+    "DatabaseQueryError",
     "StockNotFoundError",
     "DuplicateStockError",
     "ValidationError"
