@@ -88,16 +88,19 @@ def get_batch_ticker_info(symbols_with_exchange, batch_size=50, max_workers=6):
         try:
             # Create Ticker object with batch of symbols and asynchronous processing
             # Using moderate concurrency to avoid overwhelming Yahoo Finance API
-            stock = yq.Ticker(
-                symbols,
-                asynchronous=True,
-                max_workers=max_workers,
-                progress=True,
-                validate=True,
-                retry=3,
-                timeout=15,
-                backoff_factor=0.5  # Slower backoff to be more respectful
-            )
+            try:
+                stock = yq.Ticker(
+                    symbols,
+                    asynchronous=True,
+                    max_workers=max_workers,
+                    progress=True,
+                    validate=True,
+                    retry=3
+                )
+            except TypeError as e:
+                # Fallback to basic parameters if advanced ones aren't supported
+                logger.warning(f"Advanced parameters not supported, using basic configuration: {e}")
+                stock = yq.Ticker(symbols, asynchronous=True, validate=True)
             
             # Get basic info for all symbols at once
             summary_data = stock.summary_detail
@@ -179,7 +182,8 @@ def get_batch_ticker_info(symbols_with_exchange, batch_size=50, max_workers=6):
 def get_individual_ticker_info(ticker, exchange=None):
     """Fetch basic info for a single ticker (fallback method)."""
     try:
-        stock = yq.Ticker(ticker, retry=2, timeout=5)
+        # Use basic ticker creation to avoid parameter conflicts
+        stock = yq.Ticker(ticker)
         
         # Get basic info
         info = stock.summary_detail
