@@ -26,7 +26,7 @@ jobs:
         cache: 'pip'
         
     - name: Cache virtual environment
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: cache
       with:
         path: .venv
@@ -48,12 +48,11 @@ jobs:
         python -m venv .venv
         source .venv/bin/activate
         python -m pip install --upgrade pip
-        pip install --no-cache-dir -r Scripts/requirements.txt
+        pip install --no-cache-dir -r requirements.txt
 
     - name: Process tickers and update database
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
       run: |
         source .venv/bin/activate
-        cd Scripts
-        python create_stocks_table.py ../nyse_tickers.txt ../nasdaq_tickers.txt
+        python github_action_scripts/stocks_table/create_stocks_table.py nyse_tickers.txt nasdaq_tickers.txt
