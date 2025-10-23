@@ -3,6 +3,7 @@ import pandas as pd
 import psycopg2
 import sys
 import os
+import time
 from datetime import datetime
 import logging
 
@@ -46,10 +47,118 @@ def create_stocks_table(conn):
         logger.error(f"Error creating table: {e}")
         return False
 
-def get_ticker_info(ticker, exchange=None):
-    """Fetch basic info for a single ticker using yahooquery."""
+def get_batch_ticker_info(symbols_with_exchange, batch_size=50, max_workers=6):
+    """Fetch basic info for multiple tickers using yahooquery batch processing.
+    
+    Args:
+        symbols_with_exchange: List of (symbol, exchange) tuples
+        batch_size: Number of symbols to process per batch (should be ~8-10x max_workers)
+        max_workers: Number of concurrent HTTP requests (keep lower to avoid rate limits)
+    """
+    all_ticker_data = []
+    
+    # Process symbols in batches
+    for i in range(0, len(symbols_with_exchange), batch_size):
+        batch = symbols_with_exchange[i:i + batch_size]
+        symbols = [symbol for symbol, exchange in batch]
+        
+        logger.info(f"Processing batch {i//batch_size + 1}/{(len(symbols_with_exchange) + batch_size - 1)//batch_size} with {len(symbols)} symbols")
+        
+        try:
+            # Create Ticker object with batch of symbols and asynchronous processing
+            # Using moderate concurrency to avoid overwhelming Yahoo Finance API
+            stock = yq.Ticker(
+                symbols,
+                asynchronous=True,
+                max_workers=max_workers,
+                progress=True,
+                validate=True,
+                retry=3,
+                timeout=15,
+                backoff_factor=0.5  # Slower backoff to be more respectful
+            )
+            
+            # Get basic info for all symbols at once
+            summary_data = stock.summary_detail
+            profile_data = stock.asset_profile
+            
+            # Check for invalid symbols
+            if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
+                logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
+            
+            # Process each symbol in the batch
+            for symbol, exchange in batch:
+                try:
+                    # Skip if symbol was marked as invalid
+                    if hasattr(stock, 'invalid_symbols') and symbol in stock.invalid_symbols:
+                        logger.warning(f"Skipping invalid symbol: {symbol}")
+                        continue
+                    
+                    # Check if we have summary data for this symbol
+                    if symbol not in summary_data or summary_data[symbol] is None:
+                        logger.warning(f"No summary data available for symbol: {symbol}")
+                        continue
+                    
+                    # Check if there's an error in the data
+                    if isinstance(summary_data[symbol], dict) and 'Error Message' in summary_data[symbol]:
+                        logger.warning(f"Error in data for {symbol}: {summary_data[symbol]['Error Message']}")
+                        continue
+                        
+                    symbol_info = summary_data[symbol]
+                    
+                    # Extract market cap to validate the ticker has data
+                    market_cap = symbol_info.get('marketCap')
+                    if market_cap is None or market_cap == 0:
+                        logger.warning(f"No market cap available for symbol: {symbol}")
+                        continue
+                        
+                    # Get company name from profile data
+                    company_name = None
+                    if (symbol in profile_data and 
+                        profile_data[symbol] is not None and
+                        not isinstance(profile_data[symbol], dict) or 
+                        'Error Message' not in profile_data[symbol]):
+                        
+                        profile_info = profile_data[symbol]
+                        if isinstance(profile_info, dict):
+                            company_name = profile_info.get('longName')
+                    
+                    ticker_data = {
+                        'symbol': symbol,
+                        'company': company_name,
+                        'exchange': exchange,
+                        'market_cap': market_cap  # We'll use this for validation but not store it
+                    }
+                    
+                    all_ticker_data.append(ticker_data)
+                    logger.debug(f"Successfully processed symbol: {symbol}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing symbol {symbol}: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error processing batch: {e}")
+            # Fall back to individual processing for this batch if batch processing fails
+            logger.info("Falling back to individual symbol processing for this batch")
+            for symbol, exchange in batch:
+                individual_data = get_individual_ticker_info(symbol, exchange)
+                if individual_data:
+                    all_ticker_data.append(individual_data)
+            
+        # Add a delay between batches to be respectful to the API
+        # Longer delay for larger batches or when we've processed many symbols
+        if i + batch_size < len(symbols_with_exchange):
+            delay = min(2.0, 1.0 + (len(symbols) / 50.0))  # Scale delay with batch size
+            logger.debug(f"Waiting {delay:.1f} seconds before next batch...")
+            time.sleep(delay)
+    
+    return all_ticker_data
+
+def get_individual_ticker_info(ticker, exchange=None):
+    """Fetch basic info for a single ticker (fallback method)."""
     try:
-        stock = yq.Ticker(ticker)
+        stock = yq.Ticker(ticker, retry=2, timeout=5)
         
         # Get basic info
         info = stock.summary_detail
@@ -176,27 +285,28 @@ def main():
             unique_tickers.append((symbol, exchange))
             seen_symbols.add(symbol)
     
-    logger.info(f"Processing {len(unique_tickers)} unique tickers")
+    logger.info(f"Processing {len(unique_tickers)} unique symbols using batch processing")
     
-    # Process each ticker
+    # Use batch processing to get ticker data with optimized batch size
+    # Batch size of 50 with 6 workers = ~8 symbols per worker, which is more reasonable
+    all_ticker_data = get_batch_ticker_info(unique_tickers, batch_size=50, max_workers=6)
+    
+    logger.info(f"Retrieved data for {len(all_ticker_data)} symbols with valid market cap data")
+    
+    # Process each ticker for database insertion
     successful_updates = 0
     failed_updates = 0
     
-    for symbol, exchange in unique_tickers:
-        logger.info(f"Processing symbol: {symbol} (exchange: {exchange})")
-        
-        # Get ticker data (validates market cap exists)
-        ticker_data = get_ticker_info(symbol, exchange)
-        
-        if ticker_data:
-            # Insert/update in database
-            if insert_or_update_ticker(conn, ticker_data):
-                successful_updates += 1
-            else:
-                failed_updates += 1
+    for ticker_data in all_ticker_data:
+        # Insert/update in database
+        if insert_or_update_ticker(conn, ticker_data):
+            successful_updates += 1
         else:
-            logger.warning(f"Skipping symbol {symbol} - no market cap data available")
             failed_updates += 1
+    
+    # Calculate skipped symbols
+    skipped_symbols = len(unique_tickers) - len(all_ticker_data)
+    logger.info(f"Skipped {skipped_symbols} symbols due to missing market cap data or API errors")
     
     # Close database connection
     conn.close()

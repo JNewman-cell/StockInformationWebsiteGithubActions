@@ -56,11 +56,15 @@ python create_stocks_table.py ticker_file1.txt ticker_file2.txt
 
 ### 5. Features
 
-- **Error Handling**: Comprehensive logging and error handling
+- **Optimized Batch Processing**: Processes 50 symbols per batch with 6 concurrent workers (~8 symbols per worker)
+- **Rate Limit Compliance**: Conservative batch/worker ratio prevents API throttling
+- **Progress Tracking**: Shows progress bars during large batch operations
+- **Error Handling**: Comprehensive logging, retry logic, and fallback mechanisms
 - **Data Validation**: Only processes symbols with valid market cap data  
 - **Exchange Detection**: Automatically identifies NYSE/NASDAQ from filenames
 - **Duplicate Prevention**: Uses database constraints to prevent duplicate symbols
 - **Efficient Updates**: Uses PostgreSQL's ON CONFLICT clause for upserts
+- **API Rate Limiting**: Includes delays between batches to respect API limits
 - **Caching**: GitHub Actions caches Python virtual environment for faster runs
 
 ### 6. Monitoring
