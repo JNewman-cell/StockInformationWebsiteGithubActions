@@ -7,7 +7,8 @@ import time
 from datetime import datetime
 import logging
 
-# Import data layer components
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from data_layer import (
     DatabaseConnectionManager,
     StockRepository,
@@ -18,14 +19,12 @@ from data_layer import (
     DatabaseQueryError
 )
 
-# Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def check_database_connectivity(db_manager, stock_repo):
     """Check database connectivity and table structure using data layer."""
     try:
-        # Test database connection
         if not db_manager.test_connection():
             logger.error("Database connection test failed")
             return False
