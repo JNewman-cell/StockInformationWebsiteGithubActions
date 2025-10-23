@@ -4,13 +4,17 @@ This project automatically updates a PostgreSQL database with stock ticker infor
 
 ## Setup Instructions
 
-### 1. Set up GitHub Repository Secret
+### 1. Set up GitHub Environment and Secret
 
 1. Go to your GitHub repository settings
-2. Navigate to "Secrets and variables" → "Actions"
-3. Click "New repository secret"
-4. Name: `DATABASE_URL`
-5. Value: `[Your PostgreSQL connection string]`
+2. Navigate to "Environments"
+3. Create or select the environment named "GitHub Actions Secrets"
+4. In the environment, go to "Environment secrets"
+5. Click "Add secret"
+6. Name: `DATABASE_URL`
+7. Value: `[Your PostgreSQL connection string]`
+
+**Note:** The workflow is configured to use the "GitHub Actions Secrets" environment, so make sure the environment name matches exactly.
 
 ### 2. Database Schema
 

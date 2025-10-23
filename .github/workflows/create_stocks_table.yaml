@@ -8,6 +8,7 @@ on:
 jobs:
   update-stocks-database:
     runs-on: ubuntu-latest
+    environment: "GitHub Actions Secrets"
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
