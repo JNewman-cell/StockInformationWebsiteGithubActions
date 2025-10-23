@@ -1,0 +1,73 @@
+# Stock Information Database Updater
+
+This project automatically updates a PostgreSQL database with stock ticker information and market capitalization data using Yahoo Query.
+
+## Setup Instructions
+
+### 1. Set up GitHub Repository Secret
+
+1. Go to your GitHub repository settings
+2. Navigate to "Secrets and variables" → "Actions"
+3. Click "New repository secret"
+4. Name: `DATABASE_URL`
+5. Value: `[Your PostgreSQL connection string]`
+
+### 2. Database Schema
+
+The script will work with your existing `stocks` table structure:
+
+```sql
+CREATE TABLE stocks (
+    id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    symbol VARCHAR(20) UNIQUE NOT NULL,
+    company TEXT,
+    exchange VARCHAR(10),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_symbol UNIQUE (symbol),
+    CONSTRAINT STOCKS_pkey PRIMARY KEY (id)
+);
+```
+
+### 3. How it Works
+
+1. **Scheduled Run**: The workflow runs daily at 7:00 AM UTC
+2. **Manual Trigger**: You can manually trigger the workflow from the Actions tab
+3. **Ticker Sources**: Downloads latest NYSE and NASDAQ ticker lists
+3. **Data Validation**: Only adds symbols that have valid market cap data from Yahoo Finance
+4. **Exchange Detection**: Automatically detects NYSE/NASDAQ from filename
+5. **Upsert Logic**: Updates existing symbols or inserts new ones
+
+### 4. Local Development
+
+To run the script locally:
+
+```bash
+# Set environment variable (replace with your actual connection string)
+export DATABASE_URL="postgresql://username:password@host:port/database?sslmode=require"
+
+# Install dependencies
+cd Scripts
+pip install -r requirements.txt
+
+# Run with ticker files
+python create_stocks_table.py ticker_file1.txt ticker_file2.txt
+```
+
+### 5. Features
+
+- **Error Handling**: Comprehensive logging and error handling
+- **Data Validation**: Only processes symbols with valid market cap data  
+- **Exchange Detection**: Automatically identifies NYSE/NASDAQ from filenames
+- **Duplicate Prevention**: Uses database constraints to prevent duplicate symbols
+- **Efficient Updates**: Uses PostgreSQL's ON CONFLICT clause for upserts
+- **Caching**: GitHub Actions caches Python virtual environment for faster runs
+
+### 6. Monitoring
+
+Check the GitHub Actions logs to monitor:
+- Number of symbols processed
+- Success/failure rates  
+- Database connection status
+- Exchange assignment accuracy
+- Any errors or warnings

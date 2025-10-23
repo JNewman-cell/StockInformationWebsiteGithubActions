@@ -1,0 +1,58 @@
+name: Create Stocks Table
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # Runs every day at 7:00 AM UTC
+  workflow_dispatch:  # Enable manual trigger
+
+jobs:
+  update-stocks-database:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1  # Shallow clone for faster checkout
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+        
+    - name: Cache virtual environment
+      uses: actions/cache@v3
+      id: cache
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-py312-${{ hashFiles('Scripts/requirements.txt') }}
+        restore-keys: |
+          venv-${{ runner.os }}-py312-
+
+    - name: Pull NYSE tickers
+      run: |
+        wget https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt -O nyse_tickers.txt
+
+    - name: Pull NASDAQ tickers
+      run: |
+        wget https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt -O nasdaq_tickers.txt
+
+    - name: Install dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir -r Scripts/requirements.txt
+
+    - name: Process tickers and update database
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: |
+        source .venv/bin/activate
+        cd Scripts
+        python create_stocks_table.py ../nyse_tickers.txt ../nasdaq_tickers.txt
