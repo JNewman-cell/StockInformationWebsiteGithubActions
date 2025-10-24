@@ -113,9 +113,10 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
                 # Truly unchanged - all data matches both sources and Yahoo Finance
                 result.unchanged.append(symbol)
         
-        # Log Yahoo API failures
+        # Log Yahoo API failures and mark for removal
         if yahoo_failures:
-            logger.warning(f"Yahoo Finance API failures for {len(yahoo_failures)} symbols: {yahoo_failures[:10]}{'...' if len(yahoo_failures) > 10 else ''}")
+            logger.warning(f"Yahoo Finance API failures for {len(yahoo_failures)} symbols - these will be removed from database: {yahoo_failures[:10]}{'...' if len(yahoo_failures) > 10 else ''}")
+            result.to_remove_due_to_errors.extend(yahoo_failures)
             result.validation_failures.extend(yahoo_failures)
     
     logger.info(f"Comprehensive synchronization analysis complete: {result.get_stats()}")

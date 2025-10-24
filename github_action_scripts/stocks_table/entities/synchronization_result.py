@@ -24,6 +24,7 @@ class SynchronizationResult:
         self.to_update: List[Stock] = []  # stocks to update
         self.unchanged: List[str] = []  # symbols that are unchanged
         self.validation_failures: List[str] = []  # symbols that failed validation
+        self.to_remove_due_to_errors: List[str] = []  # symbols to remove due to persistent API errors
         
     def get_stats(self) -> Dict[str, int]:
         """Get summary statistics."""
@@ -32,5 +33,6 @@ class SynchronizationResult:
             'to_delete': len(self.to_delete),
             'to_update': len(self.to_update),
             'unchanged': len(self.unchanged),
-            'validation_failures': len(self.validation_failures)
+            'validation_failures': len(self.validation_failures),
+            'to_remove_due_to_errors': len(self.to_remove_due_to_errors)
         }

@@ -401,12 +401,18 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
                 try:
                     # Check if we have valid profile data
                     if (symbol not in profile_data or 
-                        profile_data[symbol] is None or
-                        (isinstance(profile_data[symbol], dict) and 'Error Message' in profile_data[symbol])):
+                        profile_data[symbol] is None):
                         failed_symbols.append(symbol)
                         continue
                     
                     profile_info = profile_data[symbol]
+                    
+                    # Handle case where profile_info is a string (error message) or not a dict
+                    if not isinstance(profile_info, dict):
+                        logger.warning(f"Invalid profile data for {symbol}: {profile_info}")
+                        failed_symbols.append(symbol)
+                        continue
+                    
                     yahoo_company_name = profile_info.get('longName')
                     
                     # Compare company name to see if update is needed

@@ -73,6 +73,22 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
                 results['delete_failures'] += 1
                 logger.error(f"Error deleting stock {symbol}: {e}")
     
+    # 1.1. Remove stocks that have persistent API errors
+    if sync_result.to_remove_due_to_errors:
+        logger.info(f"Removing {len(sync_result.to_remove_due_to_errors)} stocks due to persistent API errors")
+        for symbol in sync_result.to_remove_due_to_errors:
+            try:
+                success = stock_repo.delete_by_symbol(symbol)
+                if success:
+                    results['deleted'] += 1
+                    logger.info(f"Removed stock due to API errors: {symbol}")
+                else:
+                    results['delete_failures'] += 1
+                    logger.warning(f"Failed to remove stock (not found): {symbol}")
+            except Exception as e:
+                results['delete_failures'] += 1
+                logger.error(f"Error removing stock {symbol}: {e}")
+    
     # 2. Add new stocks (with validation)
     if sync_result.to_add:
         logger.info(f"Adding {len(sync_result.to_add)} new stocks after validation")
@@ -221,6 +237,10 @@ Operation Results:
         logger.warning(f"Failed validation for symbols: {', '.join(sync_result.validation_failures[:10])}"
                       f"{'...' if len(sync_result.validation_failures) > 10 else ''}")
     
+    if sync_result.to_remove_due_to_errors:
+        logger.info(f"Removed stocks due to persistent API errors: {', '.join(sync_result.to_remove_due_to_errors[:10])}"
+                   f"{'...' if len(sync_result.to_remove_due_to_errors) > 10 else ''}")
+    
     # Print success summary
     total_operations = (operation_results['added'] + operation_results['deleted'] + 
                        operation_results['updated'])
@@ -289,6 +309,7 @@ def main():
 Synchronization Analysis Results:
   - Stocks to ADD (new in sources): {stats['to_add']}
   - Stocks to DELETE (removed from sources): {stats['to_delete']}
+  - Stocks to REMOVE (due to API errors): {stats['to_remove_due_to_errors']}
   - Stocks to UPDATE (changed data): {stats['to_update']}
   - Stocks UNCHANGED: {stats['unchanged']}
         """)
