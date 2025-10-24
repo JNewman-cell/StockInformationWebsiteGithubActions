@@ -6,7 +6,7 @@ including database connection management, models, and repositories with full CRU
 """
 
 from .models.stock import Stock
-from .repositories.stock_repository import StockRepository
+from .repositories.stocks_repository import StocksRepository
 from .database.connection_manager import DatabaseConnectionManager
 from .exceptions import (
     DataLayerError,
@@ -20,7 +20,7 @@ from .exceptions import (
 __version__ = "1.0.0"
 __all__ = [
     "Stock",
-    "StockRepository", 
+    "StocksRepository", 
     "DatabaseConnectionManager",
     "DataLayerError",
     "DatabaseConnectionError",

@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data_layer import (
     DatabaseConnectionManager,
-    StockRepository,
+    StocksRepository,
     Stock,
     StockNotFoundError,
     DuplicateStockError,
@@ -129,7 +129,7 @@ class TestStockRepository(unittest.TestCase):
             self.skipTest("DATABASE_URL environment variable not set")
         
         self.db_manager = DatabaseConnectionManager()
-        self.repo = StockRepository(self.db_manager)
+        self.repo = StocksRepository(self.db_manager)
         
         # Clean up any existing test data
         self.cleanup_test_data()

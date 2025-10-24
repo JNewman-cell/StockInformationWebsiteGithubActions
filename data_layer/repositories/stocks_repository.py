@@ -19,7 +19,7 @@ from ..exceptions import (
 )
 
 
-class StockRepository(BaseRepository[Stock]):
+class StocksRepository(BaseRepository[Stock]):
     """
     Repository for Stock entities with full CRUD operations.
     """
