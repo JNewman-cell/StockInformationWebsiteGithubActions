@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 def analyze_database_vs_source_symbols_for_synchronization_operations(
     database_stocks: Dict[str, Stock], 
-    source_symbols: Set[Tuple[str, str]]
+    source_symbols: Set[Tuple[str, str]],
+    update_batch_func=None
 ) -> SynchronizationResult:
     """
     Compare database stocks with source symbols and Yahoo Finance data to determine sync operations.
@@ -34,6 +35,7 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
     Args:
         database_stocks: Dictionary mapping symbol to Stock object from database
         source_symbols: Set of (symbol, exchange) tuples from data sources
+        update_batch_func: Optional function to immediately update batches of stocks
         
     Returns:
         SynchronizationResult object containing all operations to perform
@@ -69,7 +71,7 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
         from utils.utils import compare_existing_stocks_with_yahoo_finance_data_for_updates
         
         # Batch check all common stocks against Yahoo Finance
-        stocks_needing_updates, yahoo_failures = compare_existing_stocks_with_yahoo_finance_data_for_updates(common_stocks)
+        stocks_needing_updates, yahoo_failures = compare_existing_stocks_with_yahoo_finance_data_for_updates(common_stocks, update_batch_func)
         
         # Create a set of symbols that need Yahoo-based updates
         yahoo_update_symbols = {stock.symbol for stock in stocks_needing_updates}

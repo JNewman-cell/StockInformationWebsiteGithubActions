@@ -128,9 +128,10 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
                         results['add_failures'] += 1
                         logger.error(f"Error adding individual stock {stock_data['symbol']}: {e}")
     
-    # 3. Update existing stocks (already verified by transformer against Yahoo Finance)
+    # 3. Update existing stocks (processed immediately during analysis phase)
     if sync_result.to_update:
-        logger.info(f"Updating {len(sync_result.to_update)} stocks that need updates (verified by comprehensive analysis)")
+        # Note: These stocks were not processed immediately during analysis (fallback case)
+        logger.info(f"Processing remaining {len(sync_result.to_update)} stocks that need updates")
         
         # Ensure all stocks have proper timestamps
         current_time = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -138,13 +139,13 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
             if stock.last_updated_at is None or stock.last_updated_at == stock.created_at:
                 stock.last_updated_at = current_time
         
-        # Bulk update all stocks that need changes
+        # Process remaining updates
         try:
             updated_count = stock_repo.bulk_update_stocks(sync_result.to_update)
             results['updated'] += updated_count
-            logger.info(f"Successfully bulk updated {updated_count} stocks")
+            logger.info(f"Successfully updated remaining {updated_count} stocks")
         except Exception as e:
-            logger.error(f"Error in bulk update, falling back to individual updates: {e}")
+            logger.error(f"Error in remaining updates, falling back to individual updates: {e}")
             # Fall back to individual updates if bulk fails
             for stock in sync_result.to_update:
                 try:
@@ -154,6 +155,8 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
                 except Exception as e:
                     results['update_failures'] += 1
                     logger.error(f"Error updating stock {stock.symbol}: {e}")
+    else:
+        logger.info("All stock updates were processed immediately during analysis phase")
     
     # 4. Update timestamps for truly unchanged stocks (already verified against Yahoo Finance)
     if sync_result.unchanged:
@@ -302,7 +305,12 @@ def main():
         
         # 3. Compare and determine synchronization operations
         logger.info("Analyzing differences between sources and database...")
-        sync_result = analyze_database_vs_source_symbols_for_synchronization_operations(database_stocks, source_symbols)
+        
+        # Create batch update function for immediate processing
+        def batch_update_stocks(stocks_batch):
+            return stock_repo.bulk_update_stocks(stocks_batch)
+        
+        sync_result = analyze_database_vs_source_symbols_for_synchronization_operations(database_stocks, source_symbols, batch_update_stocks)
         
         stats = sync_result.get_stats()
         logger.info(f"""

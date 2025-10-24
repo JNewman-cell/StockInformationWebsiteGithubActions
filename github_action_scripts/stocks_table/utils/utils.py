@@ -469,22 +469,27 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
     return valid_stocks, failed_symbols
 
 
-def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check: List, batch_size: int = 50) -> Tuple[List, List[str]]:
+def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check: List, update_batch_func=None, batch_size: int = 50) -> Tuple[List, List[str]]:
     """
     Check if existing stocks need updates by comparing with Yahoo Finance data.
+    Process and update stocks in batches immediately to avoid memory issues.
     
     Args:
         stocks_to_check: List of Stock objects to check
+        update_batch_func: Optional function to call with batches of stocks that need updates
         batch_size: Number of stocks to process per batch
         
     Returns:
         Tuple of (stocks_needing_updates, failed_symbols)
+        Note: If update_batch_func is provided, stocks_needing_updates will be empty 
+              since updates are processed immediately
     """
     if not stocks_to_check:
         return [], []
     
     stocks_needing_updates = []
     failed_symbols = []
+    total_updated = 0
     
     logger.info(f"Checking {len(stocks_to_check)} stocks for potential updates")
     
@@ -576,6 +581,24 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
                     failed_symbols.append(symbol)
                     logger.error(f"Error checking stock {symbol} for updates: {e}")
             
+            # Process updates for this batch immediately if callback provided
+            if update_batch_func and stocks_needing_updates:
+                batch_updates = []
+                for stock in stocks_needing_updates:
+                    if stock in batch:  # Only process stocks from current batch
+                        batch_updates.append(stock)
+                
+                if batch_updates:
+                    logger.info(f"Immediately updating {len(batch_updates)} stocks from batch {i//batch_size + 1}")
+                    try:
+                        updated_count = update_batch_func(batch_updates)
+                        total_updated += updated_count
+                        logger.info(f"Successfully updated {updated_count} stocks from current batch")
+                        # Remove processed stocks from the main list since they're already updated
+                        stocks_needing_updates = [s for s in stocks_needing_updates if s not in batch_updates]
+                    except Exception as e:
+                        logger.error(f"Error in batch update for batch {i//batch_size + 1}: {e}")
+            
         except Exception as e:
             logger.error(f"Error processing update check batch: {e}")
             # Fall back to individual processing
@@ -590,8 +613,13 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
                     failed_symbols.append(stock.symbol)
                     logger.error(f"Error in individual update check for {stock.symbol}: {e}")
     
-    logger.info(f"Update check complete: {len(stocks_needing_updates)} need updates, {len(failed_symbols)} failed")
-    return stocks_needing_updates, failed_symbols
+    if update_batch_func:
+        logger.info(f"Update check complete: {total_updated} stocks updated immediately, {len(failed_symbols)} failed")
+        # Return empty list since updates were processed immediately
+        return [], failed_symbols
+    else:
+        logger.info(f"Update check complete: {len(stocks_needing_updates)} need updates, {len(failed_symbols)} failed")
+        return stocks_needing_updates, failed_symbols
 
 
 def print_final_statistics(stock_repo, total_successful, total_failed, total_skipped):
