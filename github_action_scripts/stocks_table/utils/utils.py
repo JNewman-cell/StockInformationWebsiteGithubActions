@@ -500,26 +500,58 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
             stock_yahoo = yq.Ticker(symbols, asynchronous=True, validate=True)
             profile_data = stock_yahoo.asset_profile
             
+            # Check for errors in profile_data
+            if symbols:  # Check if we have symbols to process
+                for symbol in symbols:
+                    if (symbol in profile_data and 
+                        profile_data[symbol] is not None and
+                        isinstance(profile_data[symbol], dict)):
+                        profile_err = _extract_error_message(profile_data[symbol])
+                        if profile_err:
+                            logger.warning(f"Error in profile data for {symbol} during update check: {profile_err}")
+                            failed_symbols.append(symbol)
+            
+            # Get company name data from correct sources
+            quote_type_data = None
+            price_data = None
+            try:
+                quote_type_data = stock_yahoo.quote_type
+                price_data = stock_yahoo.price
+            except Exception as e:
+                logger.debug(f"Could not get company name data for update check: {e}")
+            
             # Check each stock in the batch
             for stock in batch:
                 symbol = stock.symbol
                 
                 try:
-                    # Check if we have valid profile data
-                    if (symbol not in profile_data or 
-                        profile_data[symbol] is None):
-                        failed_symbols.append(symbol)
-                        continue
+                    # Get company name from multiple sources (yahooquery fork has different structure)
+                    yahoo_company_name = None
                     
-                    profile_info = profile_data[symbol]
+                    # Try quote_type first (most reliable for company names)
+                    if quote_type_data and symbol in quote_type_data and isinstance(quote_type_data[symbol], dict):
+                        yahoo_company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
                     
-                    # Handle case where profile_info is a string (error message) or not a dict
-                    if not isinstance(profile_info, dict):
-                        logger.warning(f"Invalid profile data for {symbol}: {profile_info}")
-                        failed_symbols.append(symbol)
-                        continue
+                    # Fallback to price data if quote_type failed
+                    if not yahoo_company_name and price_data and symbol in price_data and isinstance(price_data[symbol], dict):
+                        yahoo_company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
                     
-                    yahoo_company_name = profile_info.get('longName')
+                    # Last resort: check profile_data (with proper error checking)
+                    if not yahoo_company_name:
+                        if (symbol in profile_data and 
+                            profile_data[symbol] is not None and
+                            isinstance(profile_data[symbol], dict)):
+                            
+                            profile_err = _extract_error_message(profile_data[symbol])
+                            if not profile_err:
+                                profile_info = profile_data[symbol]
+                                yahoo_company_name = profile_info.get('longName')
+                            else:
+                                logger.debug(f"Profile error for {symbol} in update check: {profile_err}")
+                        else:
+                            # No valid profile data available
+                            failed_symbols.append(symbol)
+                            continue
                     
                     # Compare company name to see if update is needed
                     needs_update = False
