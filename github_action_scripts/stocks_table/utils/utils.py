@@ -12,6 +12,23 @@ import yahooquery as yq
 logger = logging.getLogger(__name__)
 
 
+def _extract_error_message(item):
+    """Return an error message string if the response item contains an error.
+
+    Handles legacy 'Error Message' keys and the newer structured 'error' object
+    returned by the Yahoo endpoint. Returns None when no error is found.
+    """
+    if not isinstance(item, dict):
+        return None
+    # Legacy payload
+    if 'Error Message' in item:
+        return item.get('Error Message')
+    # New structured error payload: {"error": {"code":.., "message":...}}
+    if 'error' in item and isinstance(item['error'], dict):
+        return item['error'].get('message') or item['error'].get('type')
+    return None
+
+
 def parse_ticker_symbols_from_exchange_file(file_path):
     """Process a ticker file and return list of tickers with exchange info.
     
@@ -22,7 +39,6 @@ def parse_ticker_symbols_from_exchange_file(file_path):
         List of (symbol, exchange) tuples
     """
     tickers = []
-    
     # Determine exchange from filename
     exchange = None
     if 'nyse' in file_path.lower():
@@ -60,10 +76,15 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
         
         if symbol not in summary_data or summary_data[symbol] is None:
             return None
-            
-        if isinstance(summary_data[symbol], dict) and 'Error Message' in summary_data[symbol]:
+
+        # Detect structured or legacy error messages in the summary payload
+        summary_err = None
+        if isinstance(summary_data[symbol], dict):
+            summary_err = _extract_error_message(summary_data[symbol])
+        if summary_err:
+            logger.debug(f"Summary error for {symbol}: {summary_err}")
             return None
-            
+
         symbol_info = summary_data[symbol]
         market_cap = symbol_info.get('marketCap')
         
@@ -74,11 +95,14 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
         company_name = None
         if (symbol in profile_data and 
             profile_data[symbol] is not None and
-            isinstance(profile_data[symbol], dict) and 
-            'Error Message' not in profile_data[symbol]):
-            
-            profile_info = profile_data[symbol]
-            company_name = profile_info.get('longName')
+            isinstance(profile_data[symbol], dict)):
+
+            profile_err = _extract_error_message(profile_data[symbol])
+            if not profile_err:
+                profile_info = profile_data[symbol]
+                company_name = profile_info.get('longName')
+            else:
+                logger.debug(f"Profile error for {symbol}: {profile_err}")
         
         return {
             'symbol': symbol,
@@ -155,9 +179,12 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                         logger.warning(f"No summary data available for symbol: {symbol}")
                         continue
                     
-                    # Check if there's an error in the data
-                    if isinstance(summary_data[symbol], dict) and 'Error Message' in summary_data[symbol]:
-                        logger.warning(f"Error in data for {symbol}: {summary_data[symbol]['Error Message']}")
+                    # Check if there's an error in the data (legacy or structured)
+                    summary_err = None
+                    if isinstance(summary_data[symbol], dict):
+                        summary_err = _extract_error_message(summary_data[symbol])
+                    if summary_err:
+                        logger.warning(f"Error in data for {symbol}: {summary_err}")
                         continue
                         
                     symbol_info = summary_data[symbol]
@@ -168,15 +195,18 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                         logger.warning(f"No market cap available for symbol: {symbol}")
                         continue
                         
-                    # Get company name from profile data
+                    # Get company name from profile data, if available and not errored
                     company_name = None
                     if (symbol in profile_data and 
                         profile_data[symbol] is not None and
-                        isinstance(profile_data[symbol], dict) and 
-                        'Error Message' not in profile_data[symbol]):
-                        
-                        profile_info = profile_data[symbol]
-                        company_name = profile_info.get('longName')
+                        isinstance(profile_data[symbol], dict)):
+
+                        profile_err = _extract_error_message(profile_data[symbol])
+                        if not profile_err:
+                            profile_info = profile_data[symbol]
+                            company_name = profile_info.get('longName')
+                        else:
+                            logger.debug(f"Profile error for {symbol}: {profile_err}")
                     
                     ticker_data = {
                         'symbol': symbol,
@@ -306,11 +336,17 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                 try:
                     # Check if we have valid summary data
                     if (symbol not in summary_data or 
-                        summary_data[symbol] is None or
-                        (isinstance(summary_data[symbol], dict) and 'Error Message' in summary_data[symbol])):
+                        summary_data[symbol] is None):
                         failed_symbols.append(symbol)
                         logger.warning(f"No valid data for symbol: {symbol}")
                         continue
+                    # Check for structured/legacy error
+                    if isinstance(summary_data[symbol], dict):
+                        summary_err = _extract_error_message(summary_data[symbol])
+                        if summary_err:
+                            failed_symbols.append(symbol)
+                            logger.warning(f"No valid data for symbol: {symbol} - {summary_err}")
+                            continue
                     
                     symbol_info = summary_data[symbol]
                     market_cap = symbol_info.get('marketCap')
@@ -325,11 +361,14 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                     company_name = None
                     if (symbol in profile_data and 
                         profile_data[symbol] is not None and
-                        isinstance(profile_data[symbol], dict) and 
-                        'Error Message' not in profile_data[symbol]):
-                        
-                        profile_info = profile_data[symbol]
-                        company_name = profile_info.get('longName')
+                        isinstance(profile_data[symbol], dict)):
+
+                        profile_err = _extract_error_message(profile_data[symbol])
+                        if not profile_err:
+                            profile_info = profile_data[symbol]
+                            company_name = profile_info.get('longName')
+                        else:
+                            logger.debug(f"Profile error for {symbol}: {profile_err}")
                     
                     # Stock is valid, add to valid list
                     valid_stock_data = {
