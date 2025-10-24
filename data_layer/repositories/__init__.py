@@ -3,6 +3,6 @@ Repositories package initialization.
 """
 
 from .base_repository import BaseRepository
-from .stock_repository import StockRepository
+from .stocks_repository import StocksRepository
 
-__all__ = ["BaseRepository", "StockRepository"]
+__all__ = ["BaseRepository", "StocksRepository"]

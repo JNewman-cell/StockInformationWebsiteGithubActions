@@ -19,7 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from data_layer import (
     DatabaseConnectionManager,
-    StockRepository,
+    StocksRepository,
     Stock,
     ValidationError,
 )
@@ -253,7 +253,7 @@ def main():
     try:
         logger.info("Initializing data layer...")
         db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
-        stock_repo = StockRepository(db_manager)
+        stock_repo = StocksRepository(db_manager)
         
         # Check database connectivity and table structure
         if not check_database_connectivity(db_manager, stock_repo):
