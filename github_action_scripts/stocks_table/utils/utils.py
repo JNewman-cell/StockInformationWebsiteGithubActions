@@ -17,13 +17,16 @@ def _extract_error_message(item):
 
     Handles legacy 'Error Message' keys and the newer structured 'error' object
     returned by the Yahoo endpoint. Returns None when no error is found.
+    
+    Expected new structure: {'EAI': {'error': {'code': 404, 'type': 'NotFoundError', 
+                                               'message': '...', 'symbol': 'EAI'}}}
     """
     if not isinstance(item, dict):
         return None
     # Legacy payload
     if 'Error Message' in item:
         return item.get('Error Message')
-    # New structured error payload: {"error": {"code":.., "message":...}}
+    # New structured error payload: {"error": {"code":.., "message":..., "symbol":...}}
     if 'error' in item and isinstance(item['error'], dict):
         return item['error'].get('message') or item['error'].get('type')
     return None
