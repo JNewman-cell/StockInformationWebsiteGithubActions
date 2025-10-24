@@ -94,18 +94,42 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
         if market_cap is None or market_cap == 0:
             return None
             
-        # Get company name from profile data
+        # Get company name from multiple sources (yahooquery fork has different structure)
         company_name = None
-        if (symbol in profile_data and 
-            profile_data[symbol] is not None and
-            isinstance(profile_data[symbol], dict)):
+        
+        # Try quote_type first (most reliable for company names)
+        try:
+            quote_type_data = stock.quote_type
+            if (symbol in quote_type_data and 
+                quote_type_data[symbol] is not None and
+                isinstance(quote_type_data[symbol], dict)):
+                company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
+        except:
+            pass
+        
+        # Fallback to price data if quote_type failed
+        if not company_name:
+            try:
+                price_data = stock.price
+                if (symbol in price_data and 
+                    price_data[symbol] is not None and
+                    isinstance(price_data[symbol], dict)):
+                    company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
+            except:
+                pass
+        
+        # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
+        if not company_name:
+            if (symbol in profile_data and 
+                profile_data[symbol] is not None and
+                isinstance(profile_data[symbol], dict)):
 
-            profile_err = _extract_error_message(profile_data[symbol])
-            if not profile_err:
-                profile_info = profile_data[symbol]
-                company_name = profile_info.get('longName')
-            else:
-                logger.debug(f"Profile error for {symbol}: {profile_err}")
+                profile_err = _extract_error_message(profile_data[symbol])
+                if not profile_err:
+                    profile_info = profile_data[symbol]
+                    company_name = profile_info.get('longName')
+                else:
+                    logger.debug(f"Profile error for {symbol}: {profile_err}")
         
         return {
             'symbol': symbol,
@@ -165,6 +189,15 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
             summary_data = stock.summary_detail
             profile_data = stock.asset_profile
             
+            # Get company name data from correct sources
+            quote_type_data = None
+            price_data = None
+            try:
+                quote_type_data = stock.quote_type
+                price_data = stock.price
+            except Exception as e:
+                logger.debug(f"Could not get company name data: {e}")
+            
             # Check for invalid symbols
             if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
                 logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
@@ -198,18 +231,29 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                         logger.warning(f"No market cap available for symbol: {symbol}")
                         continue
                         
-                    # Get company name from profile data, if available and not errored
+                    # Get company name from multiple sources (yahooquery fork has different structure)
                     company_name = None
-                    if (symbol in profile_data and 
-                        profile_data[symbol] is not None and
-                        isinstance(profile_data[symbol], dict)):
+                    
+                    # Try quote_type first (most reliable for company names)
+                    if quote_type_data and symbol in quote_type_data and isinstance(quote_type_data[symbol], dict):
+                        company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
+                    
+                    # Fallback to price data if quote_type failed
+                    if not company_name and price_data and symbol in price_data and isinstance(price_data[symbol], dict):
+                        company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
+                    
+                    # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
+                    if not company_name:
+                        if (symbol in profile_data and 
+                            profile_data[symbol] is not None and
+                            isinstance(profile_data[symbol], dict)):
 
-                        profile_err = _extract_error_message(profile_data[symbol])
-                        if not profile_err:
-                            profile_info = profile_data[symbol]
-                            company_name = profile_info.get('longName')
-                        else:
-                            logger.debug(f"Profile error for {symbol}: {profile_err}")
+                            profile_err = _extract_error_message(profile_data[symbol])
+                            if not profile_err:
+                                profile_info = profile_data[symbol]
+                                company_name = profile_info.get('longName')
+                            else:
+                                logger.debug(f"Profile error for {symbol}: {profile_err}")
                     
                     ticker_data = {
                         'symbol': symbol,
@@ -326,6 +370,15 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
             summary_data = stock.summary_detail
             profile_data = stock.asset_profile
             
+            # Get company name data from correct sources
+            quote_type_data = None
+            price_data = None
+            try:
+                quote_type_data = stock.quote_type
+                price_data = stock.price
+            except Exception as e:
+                logger.debug(f"Could not get company name data: {e}")
+            
             # Check for invalid symbols
             if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
                 failed_symbols.extend(stock.invalid_symbols)
@@ -360,18 +413,29 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                         logger.warning(f"No market cap available for symbol: {symbol}")
                         continue
                     
-                    # Get company name from profile data
+                    # Get company name from multiple sources (yahooquery fork has different structure)
                     company_name = None
-                    if (symbol in profile_data and 
-                        profile_data[symbol] is not None and
-                        isinstance(profile_data[symbol], dict)):
+                    
+                    # Try quote_type first (most reliable for company names)
+                    if quote_type_data and symbol in quote_type_data and isinstance(quote_type_data[symbol], dict):
+                        company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
+                    
+                    # Fallback to price data if quote_type failed
+                    if not company_name and price_data and symbol in price_data and isinstance(price_data[symbol], dict):
+                        company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
+                    
+                    # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
+                    if not company_name:
+                        if (symbol in profile_data and 
+                            profile_data[symbol] is not None and
+                            isinstance(profile_data[symbol], dict)):
 
-                        profile_err = _extract_error_message(profile_data[symbol])
-                        if not profile_err:
-                            profile_info = profile_data[symbol]
-                            company_name = profile_info.get('longName')
-                        else:
-                            logger.debug(f"Profile error for {symbol}: {profile_err}")
+                            profile_err = _extract_error_message(profile_data[symbol])
+                            if not profile_err:
+                                profile_info = profile_data[symbol]
+                                company_name = profile_info.get('longName')
+                            else:
+                                logger.debug(f"Profile error for {symbol}: {profile_err}")
                     
                     # Stock is valid, add to valid list
                     valid_stock_data = {
