@@ -85,7 +85,7 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
         if isinstance(summary_data[symbol], dict):
             summary_err = _extract_error_message(summary_data[symbol])
         if summary_err:
-            logger.debug(f"Summary error for {symbol}: {summary_err}")
+            logger.debug(f"Error fetching summary data from yahoo for {symbol}: {summary_err}")
             return None
 
         symbol_info = summary_data[symbol]
@@ -129,7 +129,7 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
                     profile_info = profile_data[symbol]
                     company_name = profile_info.get('longName')
                 else:
-                    logger.debug(f"Profile error for {symbol}: {profile_err}")
+                    logger.debug(f"Error fetching profile data from yahoo for {symbol}: {profile_err}")
         
         return {
             'symbol': symbol,
@@ -220,7 +220,7 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                     if isinstance(summary_data[symbol], dict):
                         summary_err = _extract_error_message(summary_data[symbol])
                     if summary_err:
-                        logger.warning(f"Error in data for {symbol}: {summary_err}")
+                        logger.warning(f"Error fetching summary data from yahoo for {symbol}: {summary_err}")
                         continue
                         
                     symbol_info = summary_data[symbol]
@@ -253,7 +253,7 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                                 profile_info = profile_data[symbol]
                                 company_name = profile_info.get('longName')
                             else:
-                                logger.debug(f"Profile error for {symbol}: {profile_err}")
+                                logger.debug(f"Error fetching profile data from yahoo for {symbol} during batch processing: {profile_err}")
                     
                     ticker_data = {
                         'symbol': symbol,
@@ -401,7 +401,7 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                         summary_err = _extract_error_message(summary_data[symbol])
                         if summary_err:
                             failed_symbols.append(symbol)
-                            logger.warning(f"No valid data for symbol: {symbol} - {summary_err}")
+                            logger.warning(f"Error fetching summary data from yahoo for {symbol} during validation: {summary_err}")
                             continue
                     
                     symbol_info = summary_data[symbol]
@@ -435,7 +435,7 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                                 profile_info = profile_data[symbol]
                                 company_name = profile_info.get('longName')
                             else:
-                                logger.debug(f"Profile error for {symbol}: {profile_err}")
+                                logger.debug(f"Error fetching profile data from yahoo for {symbol} during validation: {profile_err}")
                     
                     # Stock is valid, add to valid list
                     valid_stock_data = {
@@ -508,7 +508,7 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
                         isinstance(profile_data[symbol], dict)):
                         profile_err = _extract_error_message(profile_data[symbol])
                         if profile_err:
-                            logger.warning(f"Error in profile data for {symbol} during update check: {profile_err}")
+                            logger.warning(f"Error fetching profile data from yahoo for {symbol} during update check: {profile_err}")
                             failed_symbols.append(symbol)
             
             # Get company name data from correct sources
@@ -547,7 +547,7 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
                                 profile_info = profile_data[symbol]
                                 yahoo_company_name = profile_info.get('longName')
                             else:
-                                logger.debug(f"Profile error for {symbol} in update check: {profile_err}")
+                                logger.debug(f"Error fetching profile data for {symbol} in update check: {profile_err}")
                         else:
                             # No valid profile data available
                             failed_symbols.append(symbol)
