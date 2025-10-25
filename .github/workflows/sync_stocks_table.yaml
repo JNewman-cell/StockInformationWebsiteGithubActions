@@ -34,14 +34,6 @@ jobs:
         restore-keys: |
           venv-${{ runner.os }}-py312-
 
-    - name: Pull NYSE tickers
-      run: |
-        wget https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/nyse/nyse_tickers.txt -O nyse_tickers.txt
-
-    - name: Pull NASDAQ tickers
-      run: |
-        wget https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt -O nasdaq_tickers.txt
-
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
       run: |
@@ -55,4 +47,4 @@ jobs:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
       run: |
         source .venv/bin/activate
-        python github_action_scripts/stocks_table/sync_stocks_table.py nyse_tickers.txt nasdaq_tickers.txt
+        python github_action_scripts/stocks_table/sync_stocks_table.py

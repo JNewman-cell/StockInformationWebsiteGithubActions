@@ -5,11 +5,66 @@ Utility functions for stock table synchronization.
 import logging
 import os
 import time
+import requests
 from datetime import datetime, timezone
 from typing import Dict, List, Set, Tuple, Optional
 import yahooquery as yq
 
 logger = logging.getLogger(__name__)
+
+
+def fetch_ticker_data_from_github_repo():
+    """Fetch ticker data directly from the Improved-US-Stock-Symbols GitHub repository.
+    
+    Uses the 'all_tickers.json' file which contains symbols from all exchanges.
+    Since we can't determine exchange from the combined list, we'll use a generic 'US' exchange.
+    
+    Returns:
+        List of (normalized_symbol, exchange) tuples
+    """
+    tickers = []
+    
+    # URL for the all tickers JSON file - contains symbols from all US exchanges
+    url = 'https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/all/all_tickers.json'
+    
+    try:
+        logger.info("Fetching all US ticker data from GitHub repository...")
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # Parse JSON response - should be a simple array of ticker symbols
+        ticker_symbols = response.json()
+        
+        if not isinstance(ticker_symbols, list):
+            logger.error(f"Unexpected JSON format: expected list, got {type(ticker_symbols)}")
+            raise RuntimeError("Invalid JSON format received from GitHub repository")
+            
+        # Process each ticker symbol
+        for ticker in ticker_symbols:
+            if isinstance(ticker, str) and ticker.strip():
+                # Normalize ticker by replacing / and \ with - to follow Yahoo Finance conventions
+                normalized_ticker = ticker.strip().upper().replace('/', '-').replace('\\', '-')
+                # Filter out tickers longer than 6 characters (likely invalid)
+                if len(normalized_ticker) <= 6:
+                    # Use 'US' as exchange since the all_tickers.json doesn't specify individual exchanges
+                    tickers.append((normalized_ticker, 'US'))
+        
+        logger.info(f"Successfully loaded {len(tickers)} ticker symbols from GitHub repository")
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching ticker data from GitHub: {e}")
+        raise RuntimeError(f"Failed to fetch ticker data from GitHub repository: {e}")
+    except ValueError as e:
+        logger.error(f"Error parsing JSON response: {e}")
+        raise RuntimeError(f"Failed to parse ticker data from GitHub repository: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error fetching ticker data: {e}")
+        raise RuntimeError(f"Unexpected error fetching ticker data: {e}")
+    
+    if not tickers:
+        raise RuntimeError("No valid ticker symbols found in GitHub repository")
+    
+    return tickers
 
 
 def _extract_error_message(item):

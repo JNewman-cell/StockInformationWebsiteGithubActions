@@ -24,8 +24,7 @@ from data_layer import (
     ValidationError,
 )
 from utils.utils import (
-    parse_ticker_symbols_from_exchange_file,
-    load_and_deduplicate_ticker_symbols_from_files,
+    fetch_ticker_data_from_github_repo,
     validate_stock_symbols_market_cap_via_yahoo_finance_api,
 )
 from entities.synchronization_result import SynchronizationResult
@@ -268,10 +267,6 @@ Operation Results:
 
 def main():
     """Main function for deterministic stock synchronization."""
-    if len(sys.argv) < 2:
-        logger.error("Usage: python sync_stocks_table.py <ticker_file1> [ticker_file2] ...")
-        sys.exit(1)
-    
     # Initialize data layer components
     try:
         logger.info("Initializing data layer...")
@@ -290,12 +285,12 @@ def main():
     try:
         logger.info("=== Starting Deterministic Stock Synchronization ===")
         
-        # 1. Load ticker files (data sources - our source of truth)
-        logger.info("Loading ticker files...")
-        source_tickers = load_and_deduplicate_ticker_symbols_from_files(sys.argv[1:], parse_ticker_symbols_from_exchange_file)
+        # 1. Fetch ticker data directly from GitHub repository (data source - our source of truth)
+        logger.info("Fetching ticker data from GitHub repository...")
+        source_tickers = fetch_ticker_data_from_github_repo()
         source_symbols = set(source_tickers)  # Convert to set for efficient operations
         
-        logger.info(f"Loaded {len(source_symbols)} unique symbols from {len(sys.argv[1:])} source files")
+        logger.info(f"Loaded {len(source_symbols)} unique symbols from GitHub repository")
         
         # 2. Get current database state
         logger.info("Retrieving current database state...")
