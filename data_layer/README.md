@@ -171,7 +171,7 @@ stock = Stock(symbol="GOOGL", company="Alphabet Inc.", exchange="NASDAQ")
 
 try:
     created_stock = stock_repo.create(stock)
-    print(f"Created: {created_stock.symbol} with ID {created_stock.id}")
+    print(f"Created: {created_stock.symbol}")
 except DuplicateStockError as e:
     print(f"Stock already exists: {e}")
 
@@ -189,11 +189,10 @@ print(f"Bulk inserted {len(created_stocks)} stocks")
 #### Read Operations
 
 ```python
-# Get by ID
-stock = stock_repo.get_by_id(123)
-
-# Get by symbol (case-insensitive)
+# Get by symbol (case-insensitive) - primary key
 stock = stock_repo.get_by_symbol("AAPL")
+
+# Note: get_by_id is deprecated since symbol is now the primary key
 
 # Get all stocks with pagination
 all_stocks = stock_repo.get_all(limit=100, offset=0)
@@ -239,12 +238,12 @@ if stock:
 #### Delete Operations
 
 ```python
-# Delete by ID
-success = stock_repo.delete(123)
+# Delete by symbol (primary key)
+success = stock_repo.delete("AAPL")
 if success:
     print("Stock deleted successfully")
 
-# Delete by symbol
+# Alternative method (same functionality)
 success = stock_repo.delete_by_symbol("AAPL")
 if success:
     print("Stock deleted by symbol")

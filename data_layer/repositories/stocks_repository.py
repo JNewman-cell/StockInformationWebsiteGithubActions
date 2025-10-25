@@ -59,7 +59,7 @@ class StocksRepository(BaseRepository[Stock]):
         insert_query = """
         INSERT INTO "STOCKS" (symbol, company, exchange, created_at, last_updated_at)
         VALUES (%s, %s, %s, %s, %s)
-        RETURNING id, created_at, last_updated_at;
+        RETURNING created_at, last_updated_at;
         """
         
         try:
@@ -77,11 +77,10 @@ class StocksRepository(BaseRepository[Stock]):
                 result = cursor.fetchone()
                 
                 # Update the stock object with database-generated values
-                stock.id = result[0]
-                stock.created_at = result[1]
-                stock.last_updated_at = result[2]
+                stock.created_at = result[0]
+                stock.last_updated_at = result[1]
                 
-                self.logger.info(f"Created stock: {stock.symbol} (ID: {stock.id})")
+                self.logger.info(f"Created stock: {stock.symbol}")
                 return stock
                 
         except psycopg2.IntegrityError as e:
@@ -91,39 +90,17 @@ class StocksRepository(BaseRepository[Stock]):
     
     def get_by_id(self, stock_id: int) -> Optional[Stock]:
         """
-        Retrieve a stock by its ID.
+        DEPRECATED: This method is deprecated since symbol is now the primary key.
+        Use get_by_symbol() instead.
         
         Args:
-            stock_id: The ID of the stock to retrieve
+            stock_id: The ID of the stock to retrieve (deprecated)
         
         Returns:
-            Stock if found, None otherwise
+            None (method deprecated)
         """
-        select_query = """
-        SELECT id, symbol, company, exchange, created_at, last_updated_at
-        FROM "STOCKS"
-        WHERE id = %s;
-        """
-        
-        try:
-            with self.db_manager.get_cursor_context(commit=False) as cursor:
-                cursor.execute(select_query, (stock_id,))
-                result = cursor.fetchone()
-                
-                if result:
-                    return Stock(
-                        id=result[0],
-                        symbol=result[1],
-                        company=result[2],
-                        exchange=result[3],
-                        created_at=result[4],
-                        last_updated_at=result[5]
-                    )
-                return None
-                
-        except Exception as e:
-            self.logger.error(f"Error retrieving stock by ID {stock_id}: {e}")
-            raise DatabaseQueryError("get stock by ID", str(e))
+        self.logger.warning("get_by_id is deprecated. Use get_by_symbol instead since symbol is now the primary key.")
+        return None
     
     def get_by_symbol(self, symbol: str) -> Optional[Stock]:
         """
@@ -136,7 +113,7 @@ class StocksRepository(BaseRepository[Stock]):
             Stock if found, None otherwise
         """
         select_query = """
-        SELECT id, symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, exchange, created_at, last_updated_at
         FROM "STOCKS"
         WHERE UPPER(symbol) = UPPER(%s);
         """
@@ -148,12 +125,11 @@ class StocksRepository(BaseRepository[Stock]):
                 
                 if result:
                     return Stock(
-                        id=result[0],
-                        symbol=result[1],
-                        company=result[2],
-                        exchange=result[3],
-                        created_at=result[4],
-                        last_updated_at=result[5]
+                        symbol=result[0],
+                        company=result[1],
+                        exchange=result[2],
+                        created_at=result[3],
+                        last_updated_at=result[4]
                     )
                 return None
                 
@@ -166,31 +142,31 @@ class StocksRepository(BaseRepository[Stock]):
         Update an existing stock in the database.
         
         Args:
-            stock: Stock entity to update (must have ID)
+            stock: Stock entity to update (must have symbol as PK)
         
         Returns:
             Updated stock
         
         Raises:
             StockNotFoundError: If stock doesn't exist
-            ValidationError: If stock ID is missing
+            ValidationError: If stock symbol is missing
             DatabaseQueryError: If database operation fails
         """
-        if stock.id is None:
-            raise ValidationError("id", stock.id, "Stock ID is required for update")
+        if not stock.symbol:
+            raise ValidationError("symbol", stock.symbol, "Stock symbol is required for update")
         
         # Validate the stock
         stock.validate()
         
         # Check if stock exists
-        existing_stock = self.get_by_id(stock.id)
+        existing_stock = self.get_by_symbol(stock.symbol)
         if existing_stock is None:
-            raise StockNotFoundError(str(stock.id), "ID")
+            raise StockNotFoundError(stock.symbol, "symbol")
         
         update_query = """
         UPDATE "STOCKS" 
-        SET symbol = %s, company = %s, exchange = %s, last_updated_at = %s
-        WHERE id = %s
+        SET company = %s, exchange = %s, last_updated_at = %s
+        WHERE UPPER(symbol) = UPPER(%s)
         RETURNING last_updated_at;
         """
         
@@ -199,17 +175,16 @@ class StocksRepository(BaseRepository[Stock]):
                 current_time = datetime.now()
                 
                 cursor.execute(update_query, (
-                    stock.symbol,
                     stock.company,
                     stock.exchange,
                     current_time,
-                    stock.id
+                    stock.symbol
                 ))
                 
                 result = cursor.fetchone()
                 stock.last_updated_at = result[0]
                 
-                self.logger.info(f"Updated stock: {stock.symbol} (ID: {stock.id})")
+                self.logger.info(f"Updated stock: {stock.symbol}")
                 return stock
                 
         except psycopg2.IntegrityError as e:
@@ -219,12 +194,12 @@ class StocksRepository(BaseRepository[Stock]):
         except Exception as e:
             raise DatabaseQueryError("update stock", str(e))
     
-    def delete(self, stock_id: int) -> bool:
+    def delete(self, symbol: str) -> bool:
         """
-        Delete a stock by its ID.
+        Delete a stock by its symbol (primary key).
         
         Args:
-            stock_id: The ID of the stock to delete
+            symbol: The symbol of the stock to delete
         
         Returns:
             True if deletion was successful, False if stock not found
@@ -232,18 +207,18 @@ class StocksRepository(BaseRepository[Stock]):
         Raises:
             DatabaseQueryError: If database operation fails
         """
-        delete_query = 'DELETE FROM "STOCKS" WHERE id = %s;'
+        delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = UPPER(%s);'
         
         try:
             with self.db_manager.get_cursor_context() as cursor:
-                cursor.execute(delete_query, (stock_id,))
+                cursor.execute(delete_query, (symbol.strip(),))
                 deleted_count = cursor.rowcount
                 
                 if deleted_count > 0:
-                    self.logger.info(f"Deleted stock with ID: {stock_id}")
+                    self.logger.info(f"Deleted stock with symbol: {symbol}")
                     return True
                 else:
-                    self.logger.warning(f"No stock found with ID: {stock_id}")
+                    self.logger.warning(f"No stock found with symbol: {symbol}")
                     return False
                     
         except Exception as e:
@@ -288,7 +263,7 @@ class StocksRepository(BaseRepository[Stock]):
             List of stocks
         """
         query = """
-        SELECT id, symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, exchange, created_at, last_updated_at
         FROM "STOCKS"
         ORDER BY symbol
         """
@@ -309,12 +284,11 @@ class StocksRepository(BaseRepository[Stock]):
                 stocks = []
                 for row in results:
                     stock = Stock(
-                        id=row[0],
-                        symbol=row[1],
-                        company=row[2],
-                        exchange=row[3],
-                        created_at=row[4],
-                        last_updated_at=row[5]
+                        symbol=row[0],
+                        company=row[1],
+                        exchange=row[2],
+                        created_at=row[3],
+                        last_updated_at=row[4]
                     )
                     stocks.append(stock)
                 
@@ -358,7 +332,7 @@ class StocksRepository(BaseRepository[Stock]):
             params.append(exchange)
         
         query = """
-        SELECT id, symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, exchange, created_at, last_updated_at
         FROM "STOCKS"
         """
         
@@ -382,12 +356,11 @@ class StocksRepository(BaseRepository[Stock]):
                 stocks = []
                 for row in results:
                     stock = Stock(
-                        id=row[0],
-                        symbol=row[1],
-                        company=row[2],
-                        exchange=row[3],
-                        created_at=row[4],
-                        last_updated_at=row[5]
+                        symbol=row[0],
+                        company=row[1],
+                        exchange=row[2],
+                        created_at=row[3],
+                        last_updated_at=row[4]
                     )
                     stocks.append(stock)
                 
@@ -458,9 +431,9 @@ class StocksRepository(BaseRepository[Stock]):
             Dictionary mapping symbol to Stock object
         """
         query = """
-        SELECT id, symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, exchange, created_at, last_updated_at
         FROM "STOCKS"
-        ORDER BY symbol;
+        ORDER BY symbol
         """
         
         try:
@@ -471,12 +444,11 @@ class StocksRepository(BaseRepository[Stock]):
                 symbols_dict = {}
                 for row in results:
                     stock = Stock(
-                        id=row[0],
-                        symbol=row[1],
-                        company=row[2],
-                        exchange=row[3],
-                        created_at=row[4],
-                        last_updated_at=row[5]
+                        symbol=row[0],
+                        company=row[1],
+                        exchange=row[2],
+                        created_at=row[3],
+                        last_updated_at=row[4]
                     )
                     symbols_dict[stock.symbol] = stock
                 
@@ -494,7 +466,7 @@ class StocksRepository(BaseRepository[Stock]):
             stocks: List of stock entities to insert
         
         Returns:
-            List of created stocks with IDs and timestamps
+            List of created stocks with timestamps
         
         Raises:
             ValidationError: If any stock is invalid
@@ -514,7 +486,7 @@ class StocksRepository(BaseRepository[Stock]):
             company = EXCLUDED.company,
             exchange = EXCLUDED.exchange,
             last_updated_at = EXCLUDED.last_updated_at
-        RETURNING id, symbol, created_at, last_updated_at;
+        RETURNING symbol, created_at, last_updated_at;
         """
         
         try:
@@ -536,12 +508,11 @@ class StocksRepository(BaseRepository[Stock]):
                     
                     # Create new stock object with database values
                     created_stock = Stock(
-                        id=result[0],
-                        symbol=result[1],
+                        symbol=result[0],
                         company=stock.company,
                         exchange=stock.exchange,
-                        created_at=result[2],
-                        last_updated_at=result[3]
+                        created_at=result[1],
+                        last_updated_at=result[2]
                     )
                     created_stocks.append(created_stock)
             
@@ -610,7 +581,7 @@ class StocksRepository(BaseRepository[Stock]):
         update_query = """
         UPDATE "STOCKS" 
         SET company = %s, exchange = %s, last_updated_at = %s
-        WHERE id = %s;
+        WHERE UPPER(symbol) = UPPER(%s);
         """
         
         try:
@@ -627,7 +598,7 @@ class StocksRepository(BaseRepository[Stock]):
                         stock.company,
                         stock.exchange,
                         stock.last_updated_at,
-                        stock.id
+                        stock.symbol
                     ))
                     updated_count += cursor.rowcount
                 

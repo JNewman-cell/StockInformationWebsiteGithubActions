@@ -86,7 +86,6 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
             
             # Start with current stock data
             updated_stock = Stock(
-                id=db_stock.id,
                 symbol=db_stock.symbol,
                 company=db_stock.company,
                 exchange=db_stock.exchange,

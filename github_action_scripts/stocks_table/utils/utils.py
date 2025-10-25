@@ -35,11 +35,14 @@ def _extract_error_message(item):
 def parse_ticker_symbols_from_exchange_file(file_path):
     """Process a ticker file and return list of tickers with exchange info.
     
+    Normalizes ticker symbols by replacing forward slashes (/) and backslashes (\) 
+    with hyphens (-) to follow Yahoo Finance API conventions.
+    
     Args:
         file_path: Path to the ticker file
         
     Returns:
-        List of (symbol, exchange) tuples
+        List of (normalized_symbol, exchange) tuples
     """
     tickers = []
     # Determine exchange from filename
@@ -53,8 +56,10 @@ def parse_ticker_symbols_from_exchange_file(file_path):
         with open(file_path, 'r') as f:
             for line in f:
                 ticker = line.strip().upper()
-                if ticker and len(ticker) <= 20:  # Basic validation for symbol length
-                    tickers.append((ticker, exchange))
+                if ticker and len(ticker) <= 6:
+                    # Normalize ticker by replacing / and \ with - to follow Yahoo Finance conventions
+                    normalized_ticker = ticker.replace('/', '-').replace('\\', '-')
+                    tickers.append((normalized_ticker, exchange))
         logger.info(f"Loaded {len(tickers)} tickers from {file_path} (exchange: {exchange})")
         return tickers
     except Exception as e:
@@ -589,7 +594,7 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
                         batch_updates.append(stock)
                 
                 if batch_updates:
-                    logger.info(f"Immediately updating {len(batch_updates)} stocks from batch {i//batch_size + 1}")
+                    logger.info(f"Updating {len(batch_updates)} stocks from batch {i//batch_size + 1}")
                     try:
                         updated_count = update_batch_func(batch_updates)
                         total_updated += updated_count

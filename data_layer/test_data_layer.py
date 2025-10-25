@@ -69,12 +69,12 @@ class TestStockModel(unittest.TestCase):
         self.assertEqual(data['symbol'], "AAPL")
         self.assertEqual(data['company'], "Apple Inc.")
         self.assertEqual(data['exchange'], "NASDAQ")
-        self.assertIn('id', data)
+        # ID is optional now since symbol is the primary key
+        self.assertIn('id', data)  # Still included in dict for compatibility
     
     def test_from_dict_creation(self):
         """Test creating stock from dictionary."""
         data = {
-            'id': 1,
             'symbol': 'AAPL',
             'company': 'Apple Inc.',
             'exchange': 'NASDAQ'
@@ -82,7 +82,6 @@ class TestStockModel(unittest.TestCase):
         
         stock = Stock.from_dict(data)
         
-        self.assertEqual(stock.id, 1)
         self.assertEqual(stock.symbol, 'AAPL')
         self.assertEqual(stock.company, 'Apple Inc.')
         self.assertEqual(stock.exchange, 'NASDAQ')
@@ -170,20 +169,14 @@ class TestStockRepository(unittest.TestCase):
         
         created_stock = self.repo.create(stock)
         
-        # Verify the stock was created with ID and timestamps
-        self.assertIsNotNone(created_stock.id)
+        # Verify the stock was created with timestamps
         self.assertIsNotNone(created_stock.created_at)
         self.assertIsNotNone(created_stock.last_updated_at)
         
-        # Retrieve by ID
-        retrieved_by_id = self.repo.get_by_id(created_stock.id)
-        self.assertIsNotNone(retrieved_by_id)
-        self.assertEqual(retrieved_by_id.symbol, "TESTCRUD")
-        
-        # Retrieve by symbol
+        # Retrieve by symbol (primary key)
         retrieved_by_symbol = self.repo.get_by_symbol("TESTCRUD")
         self.assertIsNotNone(retrieved_by_symbol)
-        self.assertEqual(retrieved_by_symbol.id, created_stock.id)
+        self.assertEqual(retrieved_by_symbol.symbol, "TESTCRUD")
     
     def test_duplicate_stock_error(self):
         """Test that creating duplicate stock raises error."""
@@ -216,7 +209,7 @@ class TestStockRepository(unittest.TestCase):
         self.assertEqual(updated_stock.exchange, "NASDAQ")
         
         # Verify in database
-        retrieved = self.repo.get_by_id(created_stock.id)
+        retrieved = self.repo.get_by_symbol(created_stock.symbol)
         self.assertEqual(retrieved.company, "Updated Company")
         self.assertEqual(retrieved.exchange, "NASDAQ")
     
@@ -227,14 +220,14 @@ class TestStockRepository(unittest.TestCase):
         created_stock = self.repo.create(stock)
         
         # Verify it exists
-        self.assertIsNotNone(self.repo.get_by_id(created_stock.id))
+        self.assertIsNotNone(self.repo.get_by_symbol(created_stock.symbol))
         
         # Delete it
-        success = self.repo.delete(created_stock.id)
+        success = self.repo.delete(created_stock.symbol)
         self.assertTrue(success)
         
         # Verify it's gone
-        self.assertIsNone(self.repo.get_by_id(created_stock.id))
+        self.assertIsNone(self.repo.get_by_symbol(created_stock.symbol))
     
     def test_search_functionality(self):
         """Test stock search functionality."""
@@ -273,7 +266,6 @@ class TestStockRepository(unittest.TestCase):
         
         # Verify all stocks were created
         for stock in created_stocks:
-            self.assertIsNotNone(stock.id)
             retrieved = self.repo.get_by_symbol(stock.symbol)
             self.assertIsNotNone(retrieved)
 

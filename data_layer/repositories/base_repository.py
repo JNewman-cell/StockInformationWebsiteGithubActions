@@ -38,18 +38,6 @@ class BaseRepository(ABC, Generic[T]):
         """
         pass
     
-    @abstractmethod
-    def get_by_id(self, entity_id: int) -> Optional[T]:
-        """
-        Retrieve an entity by its ID.
-        
-        Args:
-            entity_id: The ID of the entity to retrieve
-        
-        Returns:
-            Entity if found, None otherwise
-        """
-        pass
     
     @abstractmethod
     def update(self, entity: T) -> T:
@@ -101,15 +89,3 @@ class BaseRepository(ABC, Generic[T]):
         """
         pass
     
-    def exists(self, entity_id: int) -> bool:
-        """
-        Check if an entity exists by its ID.
-        
-        Args:
-            entity_id: The ID to check
-        
-        Returns:
-            True if entity exists, False otherwise
-        """
-        entity = self.get_by_id(entity_id)
-        return entity is not None

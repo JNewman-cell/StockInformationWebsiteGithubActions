@@ -79,7 +79,7 @@ class Stock:
             elif len(self.exchange) > 50:
                 raise ValidationError("exchange", self.exchange, "Exchange cannot be longer than 50 characters")
         
-        # Validate ID if provided
+        # Validate ID if provided (ID is now optional since symbol is the primary key)
         if self.id is not None and not isinstance(self.id, int):
             raise ValidationError("id", self.id, "ID must be an integer")
         
@@ -168,7 +168,7 @@ class Stock:
             validate: Whether to validate after updating
         """
         for key, value in data.items():
-            if hasattr(self, key) and key != 'id':  # Don't allow ID updates
+            if hasattr(self, key) and key not in ['id', 'symbol']:  # Don't allow ID or symbol updates (symbol is now PK)
                 setattr(self, key, value)
         
         if validate:

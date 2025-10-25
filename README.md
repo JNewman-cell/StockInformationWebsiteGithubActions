@@ -29,12 +29,11 @@ CREATE TABLE STOCKS (
     exchange VARCHAR(10),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_symbol UNIQUE (symbol),
-    CONSTRAINT STOCKS_pkey PRIMARY KEY (id)
+    CONSTRAINT STOCKS_pkey PRIMARY KEY (symbol)
 );
 ```
 
-The script will check for the existence of all required columns: `id`, `symbol`, `company`, `exchange`, `created_at`, and `last_updated_at`.
+The script will check for the existence of all required columns: `symbol` (primary key), `company`, `exchange`, `created_at`, and `last_updated_at`.
 
 ### 3. How it Works
 
