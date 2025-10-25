@@ -36,11 +36,11 @@ jobs:
 
     - name: Pull NYSE tickers
       run: |
-        wget https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt -O nyse_tickers.txt
+        wget https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/nyse/nyse_tickers.txt -O nyse_tickers.txt
 
     - name: Pull NASDAQ tickers
       run: |
-        wget https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt -O nasdaq_tickers.txt
+        wget https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt -O nasdaq_tickers.txt
 
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
