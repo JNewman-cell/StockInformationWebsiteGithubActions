@@ -34,7 +34,7 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
     
     Args:
         database_stocks: Dictionary mapping symbol to Stock object from database
-        source_symbols: Set of (symbol, exchange) tuples from data sources
+        source_symbols: Set of symbol strings from data sources
         update_batch_func: Optional function to immediately update batches of stocks
         
     Returns:
@@ -44,14 +44,12 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
     
     # Create sets for efficient comparison
     db_symbols = set(database_stocks.keys())
-    source_symbol_names = {symbol for symbol, exchange in source_symbols}
+    source_symbol_names = set(source_symbols)  # source_symbols is now a set of strings
     
     # Find symbols to add (in source but not in database)
     symbols_to_add = source_symbol_names - db_symbols
     for symbol in symbols_to_add:
-        # Find the exchange for this symbol from source_symbols
-        exchange = next((exch for sym, exch in source_symbols if sym == symbol), None)
-        result.to_add.append((symbol, exchange))
+        result.to_add.append(symbol)
     
     # Find symbols to delete (in database but not in source)
     symbols_to_delete = db_symbols - source_symbol_names
@@ -79,24 +77,17 @@ def analyze_database_vs_source_symbols_for_synchronization_operations(
         # Process each common symbol
         for symbol in common_symbols:
             db_stock = database_stocks[symbol]
-            source_exchange = next((exch for sym, exch in source_symbols if sym == symbol), None)
             
-            # Check if this stock needs updates (either exchange or Yahoo data differences)
+            # Check if this stock needs updates from Yahoo data differences
             needs_update = False
             
             # Start with current stock data
             updated_stock = Stock(
                 symbol=db_stock.symbol,
                 company=db_stock.company,
-                exchange=db_stock.exchange,
                 created_at=db_stock.created_at,
                 last_updated_at=db_stock.last_updated_at
             )
-            
-            # Check exchange difference
-            if db_stock.exchange != source_exchange:
-                updated_stock.exchange = source_exchange
-                needs_update = True
             
             # Check if Yahoo Finance data differs
             if symbol in yahoo_update_symbols:

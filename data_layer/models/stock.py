@@ -67,16 +67,7 @@ class Stock:
             elif len(self.company) > 255:
                 raise ValidationError("company", self.company, "Company name cannot be longer than 255 characters")
         
-        # Validate exchange if provided
-        if self.exchange is not None:
-            if not isinstance(self.exchange, str):
-                raise ValidationError("exchange", self.exchange, "Exchange must be a string")
-            
-            self.exchange = self.exchange.strip().upper()
-            if len(self.exchange) == 0:
-                self.exchange = None  # Convert empty string to None
-            elif len(self.exchange) > 50:
-                raise ValidationError("exchange", self.exchange, "Exchange cannot be longer than 50 characters")
+
         
         # Validate ID if provided (ID is now optional since symbol is the primary key)
         if self.id is not None and not isinstance(self.id, int):
@@ -102,8 +93,7 @@ class Stock:
         result = {
             'id': self.id,
             'symbol': self.symbol,
-            'company': self.company,
-            'exchange': self.exchange
+            'company': self.company
         }
         
         if include_timestamps:
@@ -138,7 +128,6 @@ class Stock:
             id=data.get('id'),
             symbol=data['symbol'],
             company=data.get('company'),
-            exchange=data.get('exchange'),
             created_at=created_at,
             last_updated_at=last_updated_at
         )
@@ -176,13 +165,12 @@ class Stock:
     def __str__(self) -> str:
         """String representation of the stock."""
         company_part = f" ({self.company})" if self.company else ""
-        exchange_part = f" [{self.exchange}]" if self.exchange else ""
-        return f"{self.symbol}{company_part}{exchange_part}"
+        return f"{self.symbol}{company_part}"
     
     def __repr__(self) -> str:
         """Detailed string representation of the stock."""
         return (f"Stock(id={self.id}, symbol='{self.symbol}', "
-                f"company='{self.company}', exchange='{self.exchange}', "
+                f"company='{self.company}', "
                 f"created_at={self.created_at}, last_updated_at={self.last_updated_at})")
     
     def __eq__(self, other) -> bool:

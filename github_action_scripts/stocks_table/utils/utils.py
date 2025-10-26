@@ -668,7 +668,7 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
             # Fall back to individual processing
             for stock in batch:
                 try:
-                    individual_data = fetch_individual_stock_data_from_yahoo_finance(stock.symbol, stock.exchange)
+                    individual_data = fetch_individual_stock_data_from_yahoo_finance(stock.symbol)
                     if individual_data and individual_data.get('company') != stock.company:
                         stock.company = individual_data.get('company')
                         stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)

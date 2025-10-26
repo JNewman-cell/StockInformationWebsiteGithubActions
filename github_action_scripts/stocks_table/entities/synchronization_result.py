@@ -7,7 +7,7 @@ and track the results of stock synchronization operations.
 
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 # Add data layer to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -19,7 +19,7 @@ class SynchronizationResult:
     """Container for synchronization operation results."""
     
     def __init__(self):
-        self.to_add: List[Tuple[str, str]] = []  # (symbol, exchange) pairs to add
+        self.to_add: List[str] = []  # symbols to add
         self.to_delete: List[str] = []  # symbols to delete
         self.to_update: List[Stock] = []  # stocks to update
         self.unchanged: List[str] = []  # symbols that are unchanged
