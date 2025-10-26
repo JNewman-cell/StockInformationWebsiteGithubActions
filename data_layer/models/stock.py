@@ -17,7 +17,6 @@ class Stock:
     """
     symbol: str
     company: Optional[str] = None
-    exchange: Optional[str] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     last_updated_at: Optional[datetime] = None

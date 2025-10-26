@@ -50,43 +50,40 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
     results = {
         'added': 0,
         'deleted': 0,
-        'updated': 0,
-        'add_failures': 0,
-        'delete_failures': 0,
-        'update_failures': 0
+        'updated': 0
     }
     
-    # 1. Delete stocks that are no longer in the source
+    # 1. Delete stocks that are no longer in the source (bulk operation)
     if sync_result.to_delete:
-        logger.info(f"Deleting {len(sync_result.to_delete)} stocks no longer in source data")
-        for symbol in sync_result.to_delete:
-            try:
-                success = stock_repo.delete_by_symbol(symbol)
-                if success:
-                    results['deleted'] += 1
-                    logger.debug(f"Deleted stock: {symbol}")
-                else:
-                    results['delete_failures'] += 1
-                    logger.warning(f"Failed to delete stock (not found): {symbol}")
-            except Exception as e:
-                results['delete_failures'] += 1
-                logger.error(f"Error deleting stock {symbol}: {e}")
+        logger.info(f"Bulk deleting {len(sync_result.to_delete)} stocks no longer in source data")
+        try:
+            deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_delete))
+            results['deleted'] += deleted_count
+            results['delete_failures'] += failed_count
+            
+            if deleted_count > 0:
+                logger.info(f"Successfully deleted {deleted_count} stocks no longer in source")
+            if failed_count > 0:
+                logger.warning(f"Failed to delete {failed_count} stocks (not found in database)")
+        except Exception as e:
+            results['delete_failures'] += len(sync_result.to_delete)
+            logger.error(f"Error in bulk delete operation for stocks no longer in source: {e}")
     
-    # 1.1. Remove stocks that have persistent API errors
+    # 1.1. Remove stocks that have persistent API errors (bulk operation)
     if sync_result.to_remove_due_to_errors:
-        logger.info(f"Removing {len(sync_result.to_remove_due_to_errors)} stocks due to persistent API errors")
-        for symbol in sync_result.to_remove_due_to_errors:
-            try:
-                success = stock_repo.delete_by_symbol(symbol)
-                if success:
-                    results['deleted'] += 1
-                    logger.info(f"Removed stock due to API errors: {symbol}")
-                else:
-                    results['delete_failures'] += 1
-                    logger.warning(f"Failed to remove stock (not found): {symbol}")
-            except Exception as e:
-                results['delete_failures'] += 1
-                logger.error(f"Error removing stock {symbol}: {e}")
+        logger.info(f"Bulk removing {len(sync_result.to_remove_due_to_errors)} stocks due to persistent API errors")
+        try:
+            deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_remove_due_to_errors))
+            results['deleted'] += deleted_count
+            results['delete_failures'] += failed_count
+            
+            if deleted_count > 0:
+                logger.info(f"Successfully removed {deleted_count} stocks due to API errors")
+            if failed_count > 0:
+                logger.warning(f"Failed to remove {failed_count} stocks with API errors (not found in database)")
+        except Exception as e:
+            results['delete_failures'] += len(sync_result.to_remove_due_to_errors)
+            logger.error(f"Error in bulk delete operation for stocks with API errors: {e}")
     
     # 2. Add new stocks (with validation)
     if sync_result.to_add:
@@ -95,37 +92,19 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
         sync_result.validation_failures.extend(validation_failures)
         
         if valid_stocks:
-            try:
-                # Convert validated data to Stock objects
-                stocks_to_add = []
-                for stock_data in valid_stocks:
-                    stock = Stock(
-                        symbol=stock_data['symbol'],
-                        company=stock_data.get('company'),
-                        exchange=stock_data.get('exchange')
-                    )
-                    stocks_to_add.append(stock)
-                
-                # Use bulk insert
-                created_stocks = stock_repo.bulk_insert(stocks_to_add)
-                results['added'] = len(created_stocks)
-                logger.info(f"Successfully added {results['added']} new stocks")
-                
-            except Exception as e:
-                logger.error(f"Error in bulk insert of new stocks: {e}")
-                # Fall back to individual insert
-                for stock_data in valid_stocks:
-                    try:
-                        stock = Stock(
-                            symbol=stock_data['symbol'],
-                            company=stock_data.get('company'),
-                            exchange=stock_data.get('exchange')
-                        )
-                        stock_repo.create(stock)
-                        results['added'] += 1
-                    except Exception as e:
-                        results['add_failures'] += 1
-                        logger.error(f"Error adding individual stock {stock_data['symbol']}: {e}")
+            # Convert validated data to Stock objects
+            stocks_to_add = []
+            for stock_data in valid_stocks:
+                stock = Stock(
+                    symbol=stock_data['symbol'],
+                    company=stock_data.get('company')
+                )
+                stocks_to_add.append(stock)
+            
+            # Use bulk insert - no fallback needed with optimized bulk operations
+            created_stocks = stock_repo.bulk_insert(stocks_to_add)
+            results['added'] = len(created_stocks)
+            logger.info(f"Successfully added {results['added']} new stocks using bulk insert")
     
     # 3. Update existing stocks (processed immediately during analysis phase)
     if sync_result.to_update:
@@ -138,45 +117,18 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
             if stock.last_updated_at is None or stock.last_updated_at == stock.created_at:
                 stock.last_updated_at = current_time
         
-        # Process remaining updates
-        try:
-            updated_count = stock_repo.bulk_update_stocks(sync_result.to_update)
-            results['updated'] += updated_count
-            logger.info(f"Successfully updated remaining {updated_count} stocks")
-        except Exception as e:
-            logger.error(f"Error in remaining updates, falling back to individual updates: {e}")
-            # Fall back to individual updates if bulk fails
-            for stock in sync_result.to_update:
-                try:
-                    stock_repo.update(stock)
-                    results['updated'] += 1
-                    logger.debug(f"Updated stock: {stock.symbol}")
-                except Exception as e:
-                    results['update_failures'] += 1
-                    logger.error(f"Error updating stock {stock.symbol}: {e}")
+        # Process remaining updates using optimized bulk operation
+        updated_count = stock_repo.bulk_update_stocks(sync_result.to_update)
+        results['updated'] += updated_count
+        logger.info(f"Successfully updated remaining {updated_count} stocks using bulk update")
     else:
         logger.info("All stock updates were processed immediately during analysis phase")
     
     # 4. Update timestamps for truly unchanged stocks (already verified against Yahoo Finance)
     if sync_result.unchanged:
         logger.info(f"Updating timestamps for {len(sync_result.unchanged)} verified unchanged stocks")
-        try:
-            updated_count = stock_repo.bulk_update_timestamps(sync_result.unchanged)
-            logger.info(f"Successfully updated timestamps for {updated_count} unchanged stocks")
-        except Exception as e:
-            logger.error(f"Error in batch timestamp update, falling back to individual updates: {e}")
-            # Fall back to individual updates if batch fails
-            success_count = 0
-            for symbol in sync_result.unchanged:
-                try:
-                    existing_stock = database_stocks.get(symbol)
-                    if existing_stock:
-                        existing_stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                        stock_repo.update(existing_stock)
-                        success_count += 1
-                except Exception as e:
-                    logger.warning(f"Error updating timestamp for unchanged stock {symbol}: {e}")
-            logger.info(f"Individual fallback updates completed: {success_count} successful")
+        updated_count = stock_repo.bulk_update_timestamps(sync_result.unchanged)
+        logger.info(f"Successfully updated timestamps for {updated_count} unchanged stocks using bulk operation")
     
     logger.info(f"Synchronization operations complete: {results}")
     return results
@@ -225,13 +177,10 @@ def print_final_synchronization_statistics(stock_repo, operation_results, sync_r
     
     # Print operation results
     logger.info(f"""
-Operation Results:
-  - Added: {operation_results['added']} stocks
-  - Deleted: {operation_results['deleted']} stocks  
-  - Updated: {operation_results['updated']} stocks
-  - Add failures: {operation_results['add_failures']}
-  - Delete failures: {operation_results['delete_failures']}
-  - Update failures: {operation_results['update_failures']}
+Bulk Operation Results:
+  - Added: {operation_results['added']} stocks (via bulk insert)
+  - Deleted: {operation_results['deleted']} stocks (via bulk delete)
+  - Updated: {operation_results['updated']} stocks (via bulk update)
   - Validation failures: {len(sync_result.validation_failures)}
     """)
     
@@ -246,21 +195,17 @@ Operation Results:
     # Print success summary
     total_operations = (operation_results['added'] + operation_results['deleted'] + 
                        operation_results['updated'])
-    print(f"\nSynchronization completed successfully!")
+    print(f"\nSynchronization completed successfully using optimized bulk operations!")
     print(f"Total operations performed: {total_operations}")
-    print(f"  - {operation_results['added']} stocks added")
-    print(f"  - {operation_results['deleted']} stocks deleted") 
-    print(f"  - {operation_results['updated']} stocks updated")
+    print(f"  - {operation_results['added']} stocks added (bulk insert)")
+    print(f"  - {operation_results['deleted']} stocks deleted (bulk delete)") 
+    print(f"  - {operation_results['updated']} stocks updated (bulk update)")
     
     # Get final database statistics
     try:
         final_count = stock_repo.count()
-        exchanges = stock_repo.get_exchanges()
-        logger.info(f"Final database state: {final_count} stocks across {len(exchanges)} exchanges")
-        logger.info(f"Exchanges: {', '.join(exchanges) if exchanges else 'None'}")
+        logger.info(f"Final database state: {final_count} stocks")
         print(f"\nFinal database state: {final_count} total stocks")
-        if exchanges:
-            print(f"Exchanges: {', '.join(exchanges)}")
     except Exception as e:
         logger.warning(f"Could not retrieve final statistics: {e}")
 
@@ -287,8 +232,8 @@ def main():
         
         # 1. Fetch ticker data directly from GitHub repository (data source - our source of truth)
         logger.info("Fetching ticker data from GitHub repository...")
-        source_tickers = fetch_ticker_data_from_github_repo()
-        source_symbols = set(source_tickers)  # Convert to set for efficient operations
+        source_symbols = fetch_ticker_data_from_github_repo()
+        source_symbols = set(source_symbols)  # Convert to set for efficient operations
         
         logger.info(f"Loaded {len(source_symbols)} unique symbols from GitHub repository")
         

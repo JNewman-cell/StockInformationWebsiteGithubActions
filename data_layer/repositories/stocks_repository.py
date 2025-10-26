@@ -57,8 +57,8 @@ class StocksRepository(BaseRepository[Stock]):
             raise DuplicateStockError(stock.symbol)
         
         insert_query = """
-        INSERT INTO "STOCKS" (symbol, company, exchange, created_at, last_updated_at)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO "STOCKS" (symbol, company, created_at, last_updated_at)
+        VALUES (%s, %s, %s, %s)
         RETURNING created_at, last_updated_at;
         """
         
@@ -69,7 +69,6 @@ class StocksRepository(BaseRepository[Stock]):
                 cursor.execute(insert_query, (
                     stock.symbol,
                     stock.company,
-                    stock.exchange,
                     current_time,
                     current_time
                 ))
@@ -113,7 +112,7 @@ class StocksRepository(BaseRepository[Stock]):
             Stock if found, None otherwise
         """
         select_query = """
-        SELECT symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, created_at, last_updated_at
         FROM "STOCKS"
         WHERE UPPER(symbol) = UPPER(%s);
         """
@@ -127,9 +126,8 @@ class StocksRepository(BaseRepository[Stock]):
                     return Stock(
                         symbol=result[0],
                         company=result[1],
-                        exchange=result[2],
-                        created_at=result[3],
-                        last_updated_at=result[4]
+                        created_at=result[2],
+                        last_updated_at=result[3]
                     )
                 return None
                 
@@ -165,7 +163,7 @@ class StocksRepository(BaseRepository[Stock]):
         
         update_query = """
         UPDATE "STOCKS" 
-        SET company = %s, exchange = %s, last_updated_at = %s
+        SET company = %s, last_updated_at = %s
         WHERE UPPER(symbol) = UPPER(%s)
         RETURNING last_updated_at;
         """
@@ -176,7 +174,6 @@ class StocksRepository(BaseRepository[Stock]):
                 
                 cursor.execute(update_query, (
                     stock.company,
-                    stock.exchange,
                     current_time,
                     stock.symbol
                 ))
@@ -251,6 +248,43 @@ class StocksRepository(BaseRepository[Stock]):
         except Exception as e:
             raise DatabaseQueryError("delete stock by symbol", str(e))
     
+    def bulk_delete_by_symbols(self, symbols: List[str]) -> Tuple[int, int]:
+        """
+        Delete multiple stocks by their symbols in a single database operation.
+        
+        Args:
+            symbols: List of stock symbols to delete
+        
+        Returns:
+            Tuple of (successful_deletes, failed_deletes)
+        """
+        if not symbols:
+            return 0, 0
+        
+        # Normalize symbols (strip whitespace, convert to uppercase)
+        normalized_symbols = [symbol.strip().upper() for symbol in symbols if symbol.strip()]
+        
+        if not normalized_symbols:
+            return 0, 0
+        
+        # Use ANY() with array for efficient bulk delete
+        delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = ANY(%s);'
+        
+        try:
+            with self.db_manager.get_cursor_context() as cursor:
+                cursor.execute(delete_query, (normalized_symbols,))
+                deleted_count = cursor.rowcount
+                
+                self.logger.info(f"Bulk deleted {deleted_count} stocks out of {len(symbols)} requested symbols")
+                
+                # Return successful and failed counts
+                failed_count = len(symbols) - deleted_count
+                return deleted_count, failed_count
+                    
+        except Exception as e:
+            self.logger.error(f"Error in bulk delete operation: {e}")
+            raise DatabaseQueryError("bulk delete stocks by symbols", str(e))
+    
     def get_all(self, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Stock]:
         """
         Retrieve all stocks with optional pagination.
@@ -263,7 +297,7 @@ class StocksRepository(BaseRepository[Stock]):
             List of stocks
         """
         query = """
-        SELECT symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, created_at, last_updated_at
         FROM "STOCKS"
         ORDER BY symbol
         """
@@ -286,9 +320,8 @@ class StocksRepository(BaseRepository[Stock]):
                     stock = Stock(
                         symbol=row[0],
                         company=row[1],
-                        exchange=row[2],
-                        created_at=row[3],
-                        last_updated_at=row[4]
+                        created_at=row[2],
+                        last_updated_at=row[3]
                     )
                     stocks.append(stock)
                 
@@ -300,7 +333,6 @@ class StocksRepository(BaseRepository[Stock]):
     def search(self, 
               symbol_pattern: Optional[str] = None,
               company_pattern: Optional[str] = None,
-              exchange: Optional[str] = None,
               limit: Optional[int] = None,
               offset: Optional[int] = None) -> List[Stock]:
         """
@@ -309,7 +341,6 @@ class StocksRepository(BaseRepository[Stock]):
         Args:
             symbol_pattern: Pattern to match against symbol (supports SQL LIKE patterns)
             company_pattern: Pattern to match against company name (supports SQL LIKE patterns)
-            exchange: Exact exchange to match
             limit: Maximum number of results
             offset: Number of results to skip
         
@@ -327,12 +358,8 @@ class StocksRepository(BaseRepository[Stock]):
             conditions.append("UPPER(company) LIKE UPPER(%s)")
             params.append(f"%{company_pattern}%")
         
-        if exchange:
-            conditions.append("UPPER(exchange) = UPPER(%s)")
-            params.append(exchange)
-        
         query = """
-        SELECT symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, created_at, last_updated_at
         FROM "STOCKS"
         """
         
@@ -358,9 +385,8 @@ class StocksRepository(BaseRepository[Stock]):
                     stock = Stock(
                         symbol=row[0],
                         company=row[1],
-                        exchange=row[2],
-                        created_at=row[3],
-                        last_updated_at=row[4]
+                        created_at=row[2],
+                        last_updated_at=row[3]
                     )
                     stocks.append(stock)
                 
@@ -369,18 +395,7 @@ class StocksRepository(BaseRepository[Stock]):
         except Exception as e:
             raise DatabaseQueryError("search stocks", str(e))
     
-    def get_by_exchange(self, exchange: str, limit: Optional[int] = None) -> List[Stock]:
-        """
-        Get stocks by exchange.
-        
-        Args:
-            exchange: Exchange name
-            limit: Maximum number of results
-        
-        Returns:
-            List of stocks from the specified exchange
-        """
-        return self.search(exchange=exchange, limit=limit)
+
     
     def count(self) -> int:
         """
@@ -400,28 +415,7 @@ class StocksRepository(BaseRepository[Stock]):
         except Exception as e:
             raise DatabaseQueryError("count stocks", str(e))
     
-    def get_exchanges(self) -> List[str]:
-        """
-        Get list of all exchanges in the database.
-        
-        Returns:
-            List of unique exchange names
-        """
-        query = """
-        SELECT DISTINCT exchange 
-        FROM "STOCKS" 
-        WHERE exchange IS NOT NULL 
-        ORDER BY exchange;
-        """
-        
-        try:
-            with self.db_manager.get_cursor_context(commit=False) as cursor:
-                cursor.execute(query)
-                results = cursor.fetchall()
-                return [row[0] for row in results]
-                
-        except Exception as e:
-            raise DatabaseQueryError("get exchanges", str(e))
+
     
     def get_all_symbols(self) -> Dict[str, Stock]:
         """
@@ -431,7 +425,7 @@ class StocksRepository(BaseRepository[Stock]):
             Dictionary mapping symbol to Stock object
         """
         query = """
-        SELECT symbol, company, exchange, created_at, last_updated_at
+        SELECT symbol, company, created_at, last_updated_at
         FROM "STOCKS"
         ORDER BY symbol
         """
@@ -446,9 +440,8 @@ class StocksRepository(BaseRepository[Stock]):
                     stock = Stock(
                         symbol=row[0],
                         company=row[1],
-                        exchange=row[2],
-                        created_at=row[3],
-                        last_updated_at=row[4]
+                        created_at=row[2],
+                        last_updated_at=row[3]
                     )
                     symbols_dict[stock.symbol] = stock
                 
@@ -480,11 +473,10 @@ class StocksRepository(BaseRepository[Stock]):
             stock.validate()
         
         insert_query = """
-        INSERT INTO "STOCKS" (symbol, company, exchange, created_at, last_updated_at)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO "STOCKS" (symbol, company, created_at, last_updated_at)
+        VALUES (%s, %s, %s, %s)
         ON CONFLICT (symbol) DO UPDATE SET
             company = EXCLUDED.company,
-            exchange = EXCLUDED.exchange,
             last_updated_at = EXCLUDED.last_updated_at
         RETURNING symbol, created_at, last_updated_at;
         """
@@ -495,24 +487,39 @@ class StocksRepository(BaseRepository[Stock]):
             with self.db_manager.get_cursor_context() as cursor:
                 current_time = datetime.now()
                 
+                # Prepare data for bulk insert
+                insert_data = []
                 for stock in stocks:
-                    cursor.execute(insert_query, (
+                    insert_data.append((
                         stock.symbol,
                         stock.company,
-                        stock.exchange,
                         current_time,
                         current_time
                     ))
-                    
-                    result = cursor.fetchone()
-                    
-                    # Create new stock object with database values
+                
+                # Use executemany for true bulk operation
+                cursor.executemany(insert_query, insert_data)
+                
+                # Since we can't get individual results with executemany + RETURNING,
+                # we'll query back the created stocks
+                symbols_clause = ','.join(['%s'] * len(stocks))
+                select_query = f"""
+                SELECT symbol, company, created_at, last_updated_at
+                FROM "STOCKS"
+                WHERE symbol IN ({symbols_clause})
+                ORDER BY symbol
+                """
+                
+                cursor.execute(select_query, [stock.symbol for stock in stocks])
+                results = cursor.fetchall()
+                
+                # Create Stock objects from results
+                for row in results:
                     created_stock = Stock(
-                        symbol=result[0],
-                        company=stock.company,
-                        exchange=stock.exchange,
-                        created_at=result[1],
-                        last_updated_at=result[2]
+                        symbol=row[0],
+                        company=row[1],
+                        created_at=row[2],
+                        last_updated_at=row[3]
                     )
                     created_stocks.append(created_stock)
             
@@ -580,27 +587,30 @@ class StocksRepository(BaseRepository[Stock]):
         
         update_query = """
         UPDATE "STOCKS" 
-        SET company = %s, exchange = %s, last_updated_at = %s
+        SET company = %s, last_updated_at = %s
         WHERE UPPER(symbol) = UPPER(%s);
         """
         
         try:
             current_time = datetime.now()
-            updated_count = 0
             
             with self.db_manager.get_cursor_context() as cursor:
+                # Prepare data for bulk update
+                update_data = []
                 for stock in stocks:
                     # Ensure last_updated_at is set
                     if stock.last_updated_at is None or stock.last_updated_at == stock.created_at:
                         stock.last_updated_at = current_time
                     
-                    cursor.execute(update_query, (
+                    update_data.append((
                         stock.company,
-                        stock.exchange,
                         stock.last_updated_at,
                         stock.symbol
                     ))
-                    updated_count += cursor.rowcount
+                
+                # Use executemany for true bulk operation
+                cursor.executemany(update_query, update_data)
+                updated_count = cursor.rowcount
                 
                 self.logger.info(f"Bulk updated {updated_count} stocks")
                 return updated_count

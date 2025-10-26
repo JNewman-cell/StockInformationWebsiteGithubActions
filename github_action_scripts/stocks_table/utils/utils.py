@@ -17,10 +17,9 @@ def fetch_ticker_data_from_github_repo():
     """Fetch ticker data directly from the Improved-US-Stock-Symbols GitHub repository.
     
     Uses the 'all_tickers.json' file which contains symbols from all exchanges.
-    Since we can't determine exchange from the combined list, we'll use a generic 'US' exchange.
     
     Returns:
-        List of (normalized_symbol, exchange) tuples
+        List of normalized ticker symbols
     """
     tickers = []
     
@@ -40,16 +39,23 @@ def fetch_ticker_data_from_github_repo():
             raise RuntimeError("Invalid JSON format received from GitHub repository")
             
         # Process each ticker symbol
+        filtered_count = 0
         for ticker in ticker_symbols:
             if isinstance(ticker, str) and ticker.strip():
+                # Skip tickers with ^ character (preferred shares, warrants, etc.)
+                if '^' in ticker:
+                    filtered_count += 1
+                    continue
+                    
                 # Normalize ticker by replacing / and \ with - to follow Yahoo Finance conventions
                 normalized_ticker = ticker.strip().upper().replace('/', '-').replace('\\', '-')
                 # Filter out tickers longer than 6 characters (likely invalid)
                 if len(normalized_ticker) <= 6:
-                    # Use 'US' as exchange since the all_tickers.json doesn't specify individual exchanges
-                    tickers.append((normalized_ticker, 'US'))
+                    tickers.append(normalized_ticker)
         
         logger.info(f"Successfully loaded {len(tickers)} ticker symbols from GitHub repository")
+        if filtered_count > 0:
+            logger.info(f"Filtered out {filtered_count} tickers containing '^' character (preferred shares, warrants, etc.)")
         
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching ticker data from GitHub: {e}")
@@ -122,12 +128,11 @@ def parse_ticker_symbols_from_exchange_file(file_path):
         return []
 
 
-def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
+def fetch_individual_stock_data_from_yahoo_finance(symbol):
     """Fallback function to get individual ticker info when batch processing fails.
     
     Args:
         symbol: Stock symbol
-        exchange: Exchange name
         
     Returns:
         Dict with ticker data or None if failed
@@ -194,7 +199,6 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol, exchange):
         return {
             'symbol': symbol,
             'company': company_name,
-            'exchange': exchange,
             'market_cap': market_cap
         }
         
