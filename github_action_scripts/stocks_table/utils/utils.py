@@ -207,12 +207,12 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol):
         return None
 
 
-def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, process_stocks_batch_func, batch_size=50, max_workers=6):
+def fetch_and_validate_stocks_from_yahoo_finance_api(symbols, process_stocks_batch_func, batch_size=50, max_workers=6):
     """Fetch basic info for multiple tickers using yahooquery batch processing.
     Process and persist each batch immediately to reduce memory usage and provide incremental progress.
     
     Args:
-        symbols_with_exchange: List of (symbol, exchange) tuples
+        symbols: List of symbol strings
         process_stocks_batch_func: Function to process a batch of stocks
         batch_size: Number of symbols to process per batch (should be ~8-10x max_workers)
         max_workers: Number of concurrent HTTP requests (keep lower to avoid rate limits)
@@ -225,11 +225,11 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
     total_skipped = 0
     
     # Process symbols in batches
-    for i in range(0, len(symbols_with_exchange), batch_size):
-        batch = symbols_with_exchange[i:i + batch_size]
-        symbols = [symbol for symbol, exchange in batch]
+    for i in range(0, len(symbols), batch_size):
+        batch = symbols[i:i + batch_size]
+        batch_symbols = batch  # batch is now just a list of symbol strings
         
-        logger.info(f"Processing batch {i//batch_size + 1}/{(len(symbols_with_exchange) + batch_size - 1)//batch_size} with {len(symbols)} symbols")
+        logger.info(f"Processing batch {i//batch_size + 1}/{(len(symbols) + batch_size - 1)//batch_size} with {len(batch_symbols)} symbols")
         
         batch_ticker_data = []  # Collect data for this batch only
         
@@ -238,7 +238,7 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
             # Using moderate concurrency to avoid overwhelming Yahoo Finance API
             try:
                 stock = yq.Ticker(
-                    symbols,
+                    batch_symbols,
                     asynchronous=True,
                     max_workers=max_workers,
                     progress=True,
@@ -247,7 +247,7 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
             except TypeError as e:
                 # Fallback to basic parameters if advanced ones aren't supported
                 logger.warning(f"Advanced parameters not supported, using basic configuration: {e}")
-                stock = yq.Ticker(symbols, asynchronous=True, validate=True)
+                stock = yq.Ticker(batch_symbols, asynchronous=True, validate=True)
             
             # Get basic info for all symbols at once
             summary_data = stock.summary_detail
@@ -267,7 +267,7 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                 logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
             
             # Process each symbol in the batch
-            for symbol, exchange in batch:
+            for symbol in batch:
                 try:
                     # Skip if symbol was marked as invalid
                     if hasattr(stock, 'invalid_symbols') and symbol in stock.invalid_symbols:
@@ -322,7 +322,6 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
                     ticker_data = {
                         'symbol': symbol,
                         'company': company_name,
-                        'exchange': exchange,
                         'market_cap': market_cap  # We'll use this for validation but not store it
                     }
                     
@@ -337,8 +336,8 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
             logger.error(f"Error processing batch: {e}")
             # Fall back to individual processing for this batch if batch processing fails
             logger.info("Falling back to individual symbol processing for this batch")
-            for symbol, exchange in batch:
-                individual_data = fetch_individual_stock_data_from_yahoo_finance(symbol, exchange)
+            for symbol in batch:
+                individual_data = fetch_individual_stock_data_from_yahoo_finance(symbol)
                 if individual_data:
                     batch_ticker_data.append(individual_data)
         
@@ -360,7 +359,7 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols_with_exchange, proc
         
         # Add a delay between batches to be respectful to the API
         # Longer delay for larger batches or when we've processed many symbols
-        if i + batch_size < len(symbols_with_exchange):
+        if i + batch_size < len(symbols):
             delay = min(2.0, 1.0 + (len(symbols) / 50.0))  # Scale delay with batch size
             logger.debug(f"Waiting {delay:.1f} seconds before next batch...")
             time.sleep(delay)
@@ -376,7 +375,7 @@ def load_and_deduplicate_ticker_symbols_from_files(file_paths, process_ticker_fi
         process_ticker_file_func: Function to process individual ticker files
         
     Returns:
-        List of unique (symbol, exchange) tuples
+        List of unique symbol strings
     """
     all_tickers = []
     
@@ -390,24 +389,19 @@ def load_and_deduplicate_ticker_symbols_from_files(file_paths, process_ticker_fi
     if not all_tickers:
         raise ValueError("No ticker files found or no tickers loaded")
     
-    # Remove duplicates (keep first occurrence with exchange info)
-    seen_symbols = set()
-    unique_tickers = []
-    for symbol, exchange in all_tickers:
-        if symbol not in seen_symbols:
-            unique_tickers.append((symbol, exchange))
-            seen_symbols.add(symbol)
+    # Remove duplicates (keep first occurrence)
+    unique_tickers = list(set(all_tickers))
     
     logger.info(f"Loaded {len(unique_tickers)} unique symbols from {len(file_paths)} files")
     return unique_tickers
 
 
-def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List[Tuple[str, str]], batch_size: int = 50) -> Tuple[List[Dict], List[str]]:
+def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List[str], batch_size: int = 50) -> Tuple[List[Dict], List[str]]:
     """
     Validate new stocks using Yahoo Finance API to ensure they have valid data.
     
     Args:
-        symbols_to_add: List of (symbol, exchange) tuples to validate
+        symbols_to_add: List of symbol strings to validate
         batch_size: Number of symbols to process per batch
         
     Returns:
@@ -424,7 +418,7 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
     # Process in batches to avoid overwhelming the API
     for i in range(0, len(symbols_to_add), batch_size):
         batch = symbols_to_add[i:i + batch_size]
-        symbols = [symbol for symbol, exchange in batch]
+        symbols = batch  # batch is now just a list of symbol strings
         
         logger.info(f"Validating batch {i//batch_size + 1}/{(len(symbols_to_add) + batch_size - 1)//batch_size}")
         
@@ -449,7 +443,7 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                 logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
             
             # Validate each symbol in the batch
-            for symbol, exchange in batch:
+            for symbol in batch:
                 if symbol in failed_symbols:
                     continue
                 
@@ -505,7 +499,6 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
                     valid_stock_data = {
                         'symbol': symbol,
                         'company': company_name,
-                        'exchange': exchange,
                         'market_cap': market_cap
                     }
                     valid_stocks.append(valid_stock_data)
@@ -519,11 +512,11 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
             logger.error(f"Error processing validation batch: {e}")
             # Fall back to individual processing for this batch
             logger.info("Falling back to individual validation for this batch")
-            for symbol, exchange in batch:
+            for symbol in batch:
                 if symbol in failed_symbols:
                     continue
                 
-                individual_data = fetch_individual_stock_data_from_yahoo_finance(symbol, exchange)
+                individual_data = fetch_individual_stock_data_from_yahoo_finance(symbol)
                 if individual_data:
                     valid_stocks.append(individual_data)
                 else:
