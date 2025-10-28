@@ -56,34 +56,24 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
     # 1. Delete stocks that are no longer in the source (bulk operation)
     if sync_result.to_delete:
         logger.info(f"Bulk deleting {len(sync_result.to_delete)} stocks no longer in source data")
-        try:
-            deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_delete))
-            results['deleted'] += deleted_count
-            results['delete_failures'] += failed_count
-            
-            if deleted_count > 0:
-                logger.info(f"Successfully deleted {deleted_count} stocks no longer in source")
-            if failed_count > 0:
-                logger.warning(f"Failed to delete {failed_count} stocks (not found in database)")
-        except Exception as e:
-            results['delete_failures'] += len(sync_result.to_delete)
-            logger.error(f"Error in bulk delete operation for stocks no longer in source: {e}")
+        deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_delete))
+        results['deleted'] += deleted_count
+        
+        if deleted_count > 0:
+            logger.info(f"Successfully deleted {deleted_count} stocks no longer in source")
+        if failed_count > 0:
+            logger.warning(f"Failed to delete {failed_count} stocks (not found in database)")
     
     # 1.1. Remove stocks that have persistent API errors (bulk operation)
     if sync_result.to_remove_due_to_errors:
         logger.info(f"Bulk removing {len(sync_result.to_remove_due_to_errors)} stocks due to persistent API errors")
-        try:
-            deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_remove_due_to_errors))
-            results['deleted'] += deleted_count
-            results['delete_failures'] += failed_count
-            
-            if deleted_count > 0:
-                logger.info(f"Successfully removed {deleted_count} stocks due to API errors")
-            if failed_count > 0:
-                logger.warning(f"Failed to remove {failed_count} stocks with API errors (not found in database)")
-        except Exception as e:
-            results['delete_failures'] += len(sync_result.to_remove_due_to_errors)
-            logger.error(f"Error in bulk delete operation for stocks with API errors: {e}")
+        deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_remove_due_to_errors))
+        results['deleted'] += deleted_count
+        
+        if deleted_count > 0:
+            logger.info(f"Successfully removed {deleted_count} stocks due to API errors")
+        if failed_count > 0:
+            logger.warning(f"Failed to remove {failed_count} stocks with API errors (not found in database)")
     
     # 2. Add new stocks (with validation)
     if sync_result.to_add:
