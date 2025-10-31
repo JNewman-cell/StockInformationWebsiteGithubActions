@@ -32,7 +32,7 @@ class StocksRepository(BaseRepository[Stock]):
         """
         super().__init__(db_manager)
         self.logger = logging.getLogger(__name__)
-        self.table_name = "STOCKS"
+        self.table_name = "stocks"
     
     def create(self, entity: Stock) -> Stock:
         """
@@ -57,7 +57,7 @@ class StocksRepository(BaseRepository[Stock]):
             raise DuplicateStockError(stock.symbol)
         
         insert_query = """
-        INSERT INTO "STOCKS" (symbol, company, created_at, last_updated_at)
+        INSERT INTO stocks (symbol, company, created_at, last_updated_at)
         VALUES (%s, %s, %s, %s)
         RETURNING created_at, last_updated_at;
         """
@@ -113,7 +113,7 @@ class StocksRepository(BaseRepository[Stock]):
         """
         select_query = """
         SELECT symbol, company, created_at, last_updated_at
-        FROM "STOCKS"
+        FROM stocks
         WHERE UPPER(symbol) = UPPER(%s);
         """
         
@@ -163,7 +163,7 @@ class StocksRepository(BaseRepository[Stock]):
             raise StockNotFoundError(stock.symbol, "symbol")
         
         update_query = """
-        UPDATE "STOCKS" 
+        UPDATE stocks 
         SET company = %s, last_updated_at = %s
         WHERE UPPER(symbol) = UPPER(%s)
         RETURNING last_updated_at;
@@ -204,7 +204,7 @@ class StocksRepository(BaseRepository[Stock]):
             DatabaseQueryError: If database operation fails
         """
         symbol = entity_id
-        delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = UPPER(%s);'
+        delete_query = 'DELETE FROM stocks WHERE UPPER(symbol) = UPPER(%s);'
         
         try:
             with self.db_manager.get_cursor_context() as cursor:
@@ -231,7 +231,7 @@ class StocksRepository(BaseRepository[Stock]):
         Returns:
             True if deletion was successful, False if stock not found
         """
-        delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = UPPER(%s);'
+        delete_query = 'DELETE FROM stocks WHERE UPPER(symbol) = UPPER(%s);'
         
         try:
             with self.db_manager.get_cursor_context() as cursor:
@@ -268,7 +268,7 @@ class StocksRepository(BaseRepository[Stock]):
             return 0, 0
         
         # Use ANY() with array for efficient bulk delete
-        delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = ANY(%s);'
+        delete_query = 'DELETE FROM stocks WHERE UPPER(symbol) = ANY(%s);'
         
         try:
             with self.db_manager.get_cursor_context() as cursor:
@@ -298,7 +298,7 @@ class StocksRepository(BaseRepository[Stock]):
         """
         query = """
         SELECT symbol, company, created_at, last_updated_at
-        FROM "STOCKS"
+        FROM stocks
         ORDER BY symbol
         """
         
@@ -360,7 +360,7 @@ class StocksRepository(BaseRepository[Stock]):
         
         query = """
         SELECT symbol, company, created_at, last_updated_at
-        FROM "STOCKS"
+        FROM stocks
         """
         
         if conditions:
@@ -404,7 +404,7 @@ class StocksRepository(BaseRepository[Stock]):
         Returns:
             Total count of stocks
         """
-        count_query = 'SELECT COUNT(*) FROM "STOCKS";'
+        count_query = 'SELECT COUNT(*) FROM stocks;'
         
         try:
             with self.db_manager.get_cursor_context(commit=False) as cursor:
@@ -426,7 +426,7 @@ class StocksRepository(BaseRepository[Stock]):
         """
         query = """
         SELECT symbol, company, created_at, last_updated_at
-        FROM "STOCKS"
+        FROM stocks
         ORDER BY symbol
         """
         
@@ -473,7 +473,7 @@ class StocksRepository(BaseRepository[Stock]):
             stock.validate()
         
         insert_query = """
-        INSERT INTO "STOCKS" (symbol, company, created_at, last_updated_at)
+        INSERT INTO stocks (symbol, company, created_at, last_updated_at)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (symbol) DO UPDATE SET
             company = EXCLUDED.company,
@@ -505,7 +505,7 @@ class StocksRepository(BaseRepository[Stock]):
                 symbols_clause = ','.join(['%s'] * len(stocks))
                 select_query = f"""
                 SELECT symbol, company, created_at, last_updated_at
-                FROM "STOCKS"
+                FROM stocks
                 WHERE symbol IN ({symbols_clause})
                 ORDER BY symbol
                 """
@@ -546,7 +546,7 @@ class StocksRepository(BaseRepository[Stock]):
             return 0
         
         update_query = """
-        UPDATE "STOCKS" 
+        UPDATE stocks 
         SET last_updated_at = %s 
         WHERE symbol = ANY(%s);
         """
@@ -586,7 +586,7 @@ class StocksRepository(BaseRepository[Stock]):
             stock.validate()
         
         update_query = """
-        UPDATE "STOCKS" 
+        UPDATE stocks 
         SET company = %s, last_updated_at = %s
         WHERE UPPER(symbol) = UPPER(%s);
         """
