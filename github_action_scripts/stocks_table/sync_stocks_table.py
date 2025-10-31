@@ -34,6 +34,10 @@ from transformer.transformer import analyze_database_vs_source_symbols_for_synch
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Suppress psycopg connection pool verbose logging that exposes connection strings
+logging.getLogger('psycopg.pool').setLevel(logging.ERROR)
+logging.getLogger('psycopg').setLevel(logging.ERROR)
+
 
 def perform_synchronization_operations(stock_repo, sync_result, database_stocks) -> Dict[str, int]:
     """

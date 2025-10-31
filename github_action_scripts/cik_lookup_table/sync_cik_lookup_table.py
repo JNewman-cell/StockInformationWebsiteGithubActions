@@ -33,6 +33,10 @@ from entities.synchronization_result import SynchronizationResult
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Suppress psycopg connection pool verbose logging that exposes connection strings
+logging.getLogger('psycopg.pool').setLevel(logging.ERROR)
+logging.getLogger('psycopg').setLevel(logging.ERROR)
+
 
 def configure_sec_company_lookup():
     """Configure the sec-company-lookup package with user email."""
