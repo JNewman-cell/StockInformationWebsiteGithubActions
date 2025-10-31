@@ -25,20 +25,14 @@ jobs:
         python-version: '3.12'
         cache: 'pip'
         
-    - name: Cache virtual environment
-      uses: actions/cache@v4
-      id: cache
-      with:
-        path: .venv
-        key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements.txt') }}
-        restore-keys: |
-          venv-${{ runner.os }}-py312-
-
-    - name: Install dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
+    - name: Install dependencies (create virtualenv)
       run: |
+        # Always create a fresh virtual environment on the runner. Caching
+        # an entire venv is brittle across runner images and Python patchlevels
+        # and can lead to missing executables (observed in CI). Instead rely
+        # on pip caching (setup-python 'cache: pip') and create the venv each run.
         python -m venv .venv
-        source .venv/bin/activate
+        . .venv/bin/activate
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
 
