@@ -2,7 +2,7 @@
 Stock model representing a stock entity.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any
 import re
@@ -36,9 +36,6 @@ class Stock:
         if not self.symbol:
             raise ValidationError("symbol", self.symbol, "Symbol cannot be empty")
         
-        if not isinstance(self.symbol, str):
-            raise ValidationError("symbol", self.symbol, "Symbol must be a string")
-        
         # Clean and validate symbol format
         self.symbol = self.symbol.strip().upper()
         
@@ -58,27 +55,12 @@ class Stock:
         
         # Validate company name if provided
         if self.company is not None:
-            if not isinstance(self.company, str):
-                raise ValidationError("company", self.company, "Company name must be a string")
-            
             self.company = self.company.strip()
             if len(self.company) == 0:
                 self.company = None  # Convert empty string to None
             elif len(self.company) > 255:
                 raise ValidationError("company", self.company, "Company name cannot be longer than 255 characters")
         
-
-        
-        # Validate ID if provided (ID is now optional since symbol is the primary key)
-        if self.id is not None and not isinstance(self.id, int):
-            raise ValidationError("id", self.id, "ID must be an integer")
-        
-        # Validate datetime fields if provided
-        if self.created_at is not None and not isinstance(self.created_at, datetime):
-            raise ValidationError("created_at", self.created_at, "created_at must be a datetime object")
-        
-        if self.last_updated_at is not None and not isinstance(self.last_updated_at, datetime):
-            raise ValidationError("last_updated_at", self.last_updated_at, "last_updated_at must be a datetime object")
     
     def to_dict(self, include_timestamps: bool = True) -> Dict[str, Any]:
         """
@@ -90,7 +72,7 @@ class Stock:
         Returns:
             Dictionary representation of the stock
         """
-        result = {
+        result: Dict[str, Any] = {
             'id': self.id,
             'symbol': self.symbol,
             'company': self.company
@@ -133,7 +115,7 @@ class Stock:
         )
     
     @classmethod
-    def from_db_row(cls, row: tuple, columns: list) -> 'Stock':
+    def from_db_row(cls, row: tuple[Any, ...], columns: list[str]) -> 'Stock':
         """
         Create Stock instance from database row.
         
@@ -173,7 +155,7 @@ class Stock:
                 f"company='{self.company}', "
                 f"created_at={self.created_at}, last_updated_at={self.last_updated_at})")
     
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Check equality based on symbol (case-insensitive)."""
         if not isinstance(other, Stock):
             return False

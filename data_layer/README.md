@@ -39,7 +39,7 @@ data_layer/
 Ensure you have the required dependencies installed:
 
 ```bash
-pip install psycopg2-binary pandas
+pip install psycopg[binary] psycopg-pool pandas
 ```
 
 ### 2. Environment Setup

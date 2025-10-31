@@ -3,7 +3,7 @@ Abstract base repository class.
 """
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic, List, Optional, Dict, Any
+from typing import TypeVar, Generic, List, Optional
 
 from ..database.connection_manager import DatabaseConnectionManager
 

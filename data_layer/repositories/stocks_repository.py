@@ -4,7 +4,7 @@ Stock repository for database operations.
 
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Tuple
 import psycopg
 
 from .base_repository import BaseRepository
@@ -34,12 +34,12 @@ class StocksRepository(BaseRepository[Stock]):
         self.logger = logging.getLogger(__name__)
         self.table_name = "STOCKS"
     
-    def create(self, stock: Stock) -> Stock:
+    def create(self, entity: Stock) -> Stock:
         """
         Create a new stock in the database.
         
         Args:
-            stock: Stock entity to create
+            entity: Stock entity to create
         
         Returns:
             Created stock with ID and timestamps
@@ -48,6 +48,7 @@ class StocksRepository(BaseRepository[Stock]):
             DuplicateStockError: If stock symbol already exists
             DatabaseQueryError: If database operation fails
         """
+        stock = entity
         # Validate the stock
         stock.validate()
         
@@ -134,12 +135,12 @@ class StocksRepository(BaseRepository[Stock]):
             self.logger.error(f"Error retrieving stock by symbol {symbol}: {e}")
             raise DatabaseQueryError("get stock by symbol", str(e))
     
-    def update(self, stock: Stock) -> Stock:
+    def update(self, entity: Stock) -> Stock:
         """
         Update an existing stock in the database.
         
         Args:
-            stock: Stock entity to update (must have symbol as PK)
+            entity: Stock entity to update (must have symbol as PK)
         
         Returns:
             Updated stock
@@ -149,6 +150,7 @@ class StocksRepository(BaseRepository[Stock]):
             ValidationError: If stock symbol is missing
             DatabaseQueryError: If database operation fails
         """
+        stock = entity
         if not stock.symbol:
             raise ValidationError("symbol", stock.symbol, "Stock symbol is required for update")
         
@@ -188,12 +190,12 @@ class StocksRepository(BaseRepository[Stock]):
         except Exception as e:
             raise DatabaseQueryError("update stock", str(e))
     
-    def delete(self, symbol: str) -> bool:
+    def delete(self, entity_id: str) -> bool:  # type: ignore[override]
         """
         Delete a stock by its symbol (primary key).
         
         Args:
-            symbol: The symbol of the stock to delete
+            entity_id: The symbol of the stock to delete
         
         Returns:
             True if deletion was successful, False if stock not found
@@ -201,6 +203,7 @@ class StocksRepository(BaseRepository[Stock]):
         Raises:
             DatabaseQueryError: If database operation fails
         """
+        symbol = entity_id
         delete_query = 'DELETE FROM "STOCKS" WHERE UPPER(symbol) = UPPER(%s);'
         
         try:
@@ -299,7 +302,7 @@ class StocksRepository(BaseRepository[Stock]):
         ORDER BY symbol
         """
         
-        params = []
+        params: List[int] = []
         if limit is not None:
             query += " LIMIT %s"
             params.append(limit)
@@ -312,7 +315,7 @@ class StocksRepository(BaseRepository[Stock]):
                 cursor.execute(query, params)
                 results = cursor.fetchall()
                 
-                stocks = []
+                stocks: List[Stock] = []
                 for row in results:
                     stock = Stock(
                         symbol=row[0],
@@ -344,8 +347,8 @@ class StocksRepository(BaseRepository[Stock]):
         Returns:
             List of matching stocks
         """
-        conditions = []
-        params = []
+        conditions: List[str] = []
+        params: List[str | int] = []
         
         if symbol_pattern:
             conditions.append("UPPER(symbol) LIKE UPPER(%s)")
@@ -377,7 +380,7 @@ class StocksRepository(BaseRepository[Stock]):
                 cursor.execute(query, params)
                 results = cursor.fetchall()
                 
-                stocks = []
+                stocks: List[Stock] = []
                 for row in results:
                     stock = Stock(
                         symbol=row[0],
@@ -432,7 +435,7 @@ class StocksRepository(BaseRepository[Stock]):
                 cursor.execute(query)
                 results = cursor.fetchall()
                 
-                symbols_dict = {}
+                symbols_dict: Dict[str, Stock] = {}
                 for row in results:
                     stock = Stock(
                         symbol=row[0],
@@ -479,13 +482,13 @@ class StocksRepository(BaseRepository[Stock]):
         """
         
         try:
-            created_stocks = []
+            created_stocks: List[Stock] = []
             
             with self.db_manager.get_cursor_context() as cursor:
                 current_time = datetime.now()
                 
                 # Prepare data for bulk insert
-                insert_data = []
+                insert_data: List[Tuple[str, Optional[str], datetime, datetime]] = []
                 for stock in stocks:
                     insert_data.append((
                         stock.symbol,
@@ -593,7 +596,7 @@ class StocksRepository(BaseRepository[Stock]):
             
             with self.db_manager.get_cursor_context() as cursor:
                 # Prepare data for bulk update
-                update_data = []
+                update_data: List[Tuple[Optional[str], datetime, str]] = []
                 for stock in stocks:
                     # Ensure last_updated_at is set
                     if stock.last_updated_at is None or stock.last_updated_at == stock.created_at:
