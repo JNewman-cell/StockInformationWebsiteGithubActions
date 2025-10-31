@@ -3,11 +3,11 @@ Database connection manager for PostgreSQL.
 """
 
 import os
-import psycopg2
-from psycopg2 import pool
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Generator
 from contextlib import contextmanager
+from psycopg_pool import ConnectionPool
+from psycopg import Connection
 
 from ..exceptions import DatabaseConnectionError
 
@@ -41,29 +41,36 @@ class DatabaseConnectionManager:
         
         self.min_connections = min_connections
         self.max_connections = max_connections
-        self._connection_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+        self._connection_pool: Optional[ConnectionPool[Connection[Any]]] = None
         
-    def _create_pool(self):
+    def _create_pool(self) -> None:
         """Create the connection pool."""
+        if not self.connection_string:
+            raise DatabaseConnectionError("Connection string is required")
+            
         try:
-            self._connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                self.min_connections,
-                self.max_connections,
-                self.connection_string
+            self._connection_pool = ConnectionPool(
+                conninfo=self.connection_string,
+                min_size=self.min_connections,
+                max_size=self.max_connections,
+                open=True
             )
             self.logger.info(f"Created connection pool with {self.min_connections}-{self.max_connections} connections")
         except Exception as e:
             raise DatabaseConnectionError(f"Failed to create connection pool: {e}")
     
-    def get_connection(self):
+    def get_connection(self) -> Connection[Any]:
         """
         Get a connection from the pool.
         
         Returns:
-            psycopg2.extensions.connection: Database connection
+            psycopg.Connection: Database connection
         """
         if self._connection_pool is None:
             self._create_pool()
+        
+        if self._connection_pool is None:
+            raise DatabaseConnectionError("Connection pool not initialized")
         
         try:
             conn = self._connection_pool.getconn()
@@ -74,7 +81,7 @@ class DatabaseConnectionManager:
         except Exception as e:
             raise DatabaseConnectionError(f"Failed to get connection from pool: {e}")
     
-    def return_connection(self, conn):
+    def return_connection(self, conn: Connection[Any]) -> None:
         """
         Return a connection to the pool.
         
@@ -88,19 +95,19 @@ class DatabaseConnectionManager:
                 self.logger.error(f"Failed to return connection to pool: {e}")
     
     @contextmanager
-    def get_connection_context(self):
+    def get_connection_context(self) -> Generator[Connection[Any], None, None]:
         """
         Context manager for database connections.
         Automatically returns the connection to the pool when done.
         
         Yields:
-            psycopg2.extensions.connection: Database connection
+            psycopg.Connection: Database connection
         """
         conn = None
         try:
             conn = self.get_connection()
             yield conn
-        except Exception as e:
+        except Exception:
             if conn:
                 conn.rollback()
             raise
@@ -109,7 +116,7 @@ class DatabaseConnectionManager:
                 self.return_connection(conn)
     
     @contextmanager
-    def get_cursor_context(self, commit: bool = True):
+    def get_cursor_context(self, commit: bool = True) -> Generator[Any, None, None]:
         """
         Context manager for database cursor with automatic connection management.
         
@@ -117,7 +124,7 @@ class DatabaseConnectionManager:
             commit: Whether to commit the transaction automatically
         
         Yields:
-            psycopg2.extensions.cursor: Database cursor
+            psycopg.Cursor: Database cursor
         """
         conn = None
         cursor = None
@@ -127,7 +134,7 @@ class DatabaseConnectionManager:
             yield cursor
             if commit:
                 conn.commit()
-        except Exception as e:
+        except Exception:
             if conn:
                 conn.rollback()
             raise
@@ -181,15 +188,15 @@ class DatabaseConnectionManager:
             self.logger.error(f"Failed to get database info: {e}")
             return {}
     
-    def close_all_connections(self):
+    def close_all_connections(self) -> None:
         """Close all connections in the pool."""
         if self._connection_pool:
             try:
-                self._connection_pool.closeall()
+                self._connection_pool.close()
                 self.logger.info("Closed all database connections")
             except Exception as e:
                 self.logger.error(f"Error closing connections: {e}")
     
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup when the object is destroyed."""
         self.close_all_connections()

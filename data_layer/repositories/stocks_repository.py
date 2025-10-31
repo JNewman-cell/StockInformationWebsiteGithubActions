@@ -5,8 +5,7 @@ Stock repository for database operations.
 import logging
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg
 
 from .base_repository import BaseRepository
 from ..models.stock import Stock
@@ -82,7 +81,7 @@ class StocksRepository(BaseRepository[Stock]):
                 self.logger.info(f"Created stock: {stock.symbol}")
                 return stock
                 
-        except psycopg2.IntegrityError as e:
+        except psycopg.errors.UniqueViolation as e:
             raise DuplicateStockError(stock.symbol)
         except Exception as e:
             raise DatabaseQueryError("create stock", str(e))
@@ -184,10 +183,8 @@ class StocksRepository(BaseRepository[Stock]):
                 self.logger.info(f"Updated stock: {stock.symbol}")
                 return stock
                 
-        except psycopg2.IntegrityError as e:
-            if "unique" in str(e).lower():
-                raise DuplicateStockError(stock.symbol)
-            raise DatabaseQueryError("update stock", str(e))
+        except psycopg.errors.UniqueViolation as e:
+            raise DuplicateStockError(stock.symbol)
         except Exception as e:
             raise DatabaseQueryError("update stock", str(e))
     

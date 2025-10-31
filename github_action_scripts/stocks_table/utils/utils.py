@@ -4,16 +4,23 @@ Utility functions for stock table synchronization.
 
 import logging
 import os
+import sys
 import time
 import requests
 from datetime import datetime, timezone
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set, Tuple, Optional, Callable, Any
 import yahooquery as yq
+
+# Add data layer to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+
+from data_layer.models import Stock
+from .constants import MAX_WORKERS
 
 logger = logging.getLogger(__name__)
 
 
-def fetch_ticker_data_from_github_repo():
+def fetch_ticker_data_from_github_repo() -> List[str]:
     """Fetch ticker data directly from the Improved-US-Stock-Symbols GitHub repository.
     
     Uses the 'all_tickers.json' file which contains symbols from all exchanges.
@@ -73,7 +80,7 @@ def fetch_ticker_data_from_github_repo():
     return tickers
 
 
-def _has_error(item):
+def _has_error(item: Dict[str, Any]) -> bool:
     """Check if the response item contains an error.
 
     Checks for the current structured 'error' object returned by the Yahoo endpoint.
@@ -85,7 +92,7 @@ def _has_error(item):
     return bool(item.get('error'))
 
 
-def _extract_error_message(item):
+def _extract_error_message(item: Dict[str, Any]) -> Optional[str]:
     """Return an error message string if the response item contains an error.
 
     Extracts error message from the current structured 'error' object
@@ -100,7 +107,7 @@ def _extract_error_message(item):
     return None
 
 
-def parse_ticker_symbols_from_exchange_file(file_path):
+def parse_ticker_symbols_from_exchange_file(file_path: str) -> List[Tuple[str, Optional[str]]]:
     """Process a ticker file and return list of tickers with exchange info.
     
     Normalizes ticker symbols by replacing forward slashes (/) and backslashes (\) 
@@ -135,7 +142,7 @@ def parse_ticker_symbols_from_exchange_file(file_path):
         return []
 
 
-def fetch_individual_stock_data_from_yahoo_finance(symbol):
+def fetch_individual_stock_data_from_yahoo_finance(symbol: str) -> Optional[Dict[str, Any]]:
     """Fallback function to get individual ticker info when batch processing fails.
     
     Args:
@@ -207,7 +214,11 @@ def fetch_individual_stock_data_from_yahoo_finance(symbol):
         return None
 
 
-def fetch_and_validate_stocks_from_yahoo_finance_api(symbols, process_stocks_batch_func, batch_size=50, max_workers=6):
+def fetch_and_validate_stocks_from_yahoo_finance_api(
+    symbols: List[str], 
+    process_stocks_batch_func: Callable[[List[Dict[str, Any]]], Tuple[int, int]], 
+    batch_size: int = 50
+) -> Tuple[int, int, int]:
     """Fetch basic info for multiple tickers using yahooquery batch processing.
     Process and persist each batch immediately to reduce memory usage and provide incremental progress.
     
@@ -235,19 +246,13 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols, process_stocks_bat
         
         try:
             # Create Ticker object with batch of symbols and asynchronous processing
-            # Using moderate concurrency to avoid overwhelming Yahoo Finance API
-            try:
-                stock = yq.Ticker(
-                    batch_symbols,
-                    asynchronous=True,
-                    max_workers=max_workers,
-                    progress=True,
-                    validate=True
-                )
-            except TypeError as e:
-                # Fallback to basic parameters if advanced ones aren't supported
-                logger.warning(f"Advanced parameters not supported, using basic configuration: {e}")
-                stock = yq.Ticker(batch_symbols, asynchronous=True, validate=True)
+            # Validate True to skip invalid symbols automatically, but we still don't want to add tickers that don't have market cap from summary detail
+            stock = yq.Ticker(
+                batch_symbols,
+                asynchronous=True,
+                max_workers=MAX_WORKERS,
+                validate=True
+            )
             
             # Get basic info for all symbols at once
             summary_data = stock.summary_detail
@@ -362,7 +367,10 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(symbols, process_stocks_bat
     return total_successful, total_failed, total_skipped
 
 
-def load_and_deduplicate_ticker_symbols_from_files(file_paths, process_ticker_file_func):
+def load_and_deduplicate_ticker_symbols_from_files(
+    file_paths: List[str], 
+    process_ticker_file_func: Callable[[str], List[Tuple[str, Optional[str]]]]
+) -> List[str]:
     """Load and process ticker files.
     
     Args:
@@ -391,7 +399,7 @@ def load_and_deduplicate_ticker_symbols_from_files(file_paths, process_ticker_fi
     return unique_tickers
 
 
-def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List[str], batch_size: int = 50) -> Tuple[List[Dict], List[str]]:
+def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List[str], batch_size: int = 50) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     Validate new stocks using Yahoo Finance API to ensure they have valid data.
     
@@ -419,7 +427,12 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
         
         try:
             # Use Yahoo Finance API to get stock data
-            stock = yq.Ticker(symbols, asynchronous=True, validate=True)
+            stock = yq.Ticker(
+                symbols,
+                asynchronous=True,
+                max_workers=MAX_WORKERS,
+                validate=True
+            )
             summary_data = stock.summary_detail
             profile_data = stock.asset_profile
             
@@ -517,7 +530,11 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
     return valid_stocks, failed_symbols
 
 
-def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check: List, update_batch_func=None, batch_size: int = 50) -> Tuple[List, List[str]]:
+def compare_existing_stocks_with_yahoo_finance_data_for_updates(
+    stocks_to_check: List[Stock], 
+    update_batch_func: Optional[Callable[[List[Stock]], int]] = None, 
+    batch_size: int = 50
+) -> Tuple[List[Stock], List[str]]:
     """
     Check if existing stocks need updates by comparing with Yahoo Finance data.
     Process and update stocks in batches immediately to avoid memory issues.
@@ -550,7 +567,12 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
         
         try:
             # Get current data from Yahoo Finance
-            stock_yahoo = yq.Ticker(symbols, asynchronous=True, validate=True)
+            stock_yahoo = yq.Ticker(
+                symbols,
+                asynchronous=True,
+                max_workers=MAX_WORKERS,
+                validate=True
+            )
             profile_data = stock_yahoo.asset_profile
             
             # Check for errors in profile_data
@@ -666,7 +688,7 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(stocks_to_check:
         return stocks_needing_updates, failed_symbols
 
 
-def print_final_statistics(stock_repo, total_successful, total_failed, total_skipped):
+def print_final_statistics(stock_repo: Any, total_successful: int, total_failed: int, total_skipped: int) -> None:
     """Print final processing statistics.
     
     Args:
