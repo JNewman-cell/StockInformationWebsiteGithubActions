@@ -336,6 +336,42 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         except Exception as e:
             raise DatabaseQueryError("delete CIK lookup", str(e))
     
+    def bulk_delete(self, ciks: List[int]) -> int:
+        """
+        Delete multiple CIK lookup entries in a single transaction.
+        
+        Args:
+            ciks: List of CIK values to delete
+        
+        Returns:
+            Number of rows successfully deleted
+        
+        Raises:
+            DatabaseQueryError: If database operation fails
+        """
+        if not ciks:
+            return 0
+        
+        delete_query = """
+        DELETE FROM cik_lookup
+        WHERE cik = %s;
+        """
+        
+        total_deleted = 0
+        
+        try:
+            with self.db_manager.get_cursor_context() as cursor:
+                for cik in ciks:
+                    cursor.execute(delete_query, (cik,))
+                    if cursor.rowcount > 0:
+                        total_deleted += 1
+                
+                self.logger.info(f"Bulk deleted {total_deleted} CIK lookups")
+                return total_deleted
+                
+        except Exception as e:
+            raise DatabaseQueryError("bulk delete CIK lookups", str(e))
+    
     def get_all(self, limit: Optional[int] = None, offset: Optional[int] = None) -> List[CikLookup]:
         """
         Retrieve all CIK lookup entries with optional pagination.
@@ -563,6 +599,104 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         except Exception as e:
             raise DatabaseQueryError("bulk upsert CIK lookups", str(e))
     
+    def bulk_insert(self, entities: List[CikLookup]) -> int:
+        """
+        Insert multiple CIK lookup entries in a single transaction.
+        Skips entries that already exist (uses ON CONFLICT DO NOTHING).
+        
+        Args:
+            entities: List of CikLookup entities to insert
+        
+        Returns:
+            Number of rows successfully inserted
+        
+        Raises:
+            DatabaseQueryError: If database operation fails
+        """
+        if not entities:
+            return 0
+        
+        # Validate all entities first
+        for entity in entities:
+            entity.validate()
+        
+        insert_query = """
+        INSERT INTO cik_lookup (cik, company_name, created_at, last_updated_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (cik) DO NOTHING;
+        """
+        
+        current_time = datetime.now()
+        total_inserted = 0
+        
+        try:
+            with self.db_manager.get_cursor_context() as cursor:
+                for entity in entities:
+                    cursor.execute(insert_query, (
+                        entity.cik,
+                        entity.company_name,
+                        current_time,
+                        current_time
+                    ))
+                    if cursor.rowcount > 0:
+                        total_inserted += 1
+                        entity.created_at = current_time
+                        entity.last_updated_at = current_time
+                
+                self.logger.info(f"Bulk inserted {total_inserted} new CIK lookups")
+                return total_inserted
+                
+        except Exception as e:
+            raise DatabaseQueryError("bulk insert CIK lookups", str(e))
+    
+    def bulk_update(self, entities: List[CikLookup]) -> int:
+        """
+        Update multiple existing CIK lookup entries in a single transaction.
+        Only updates entries that already exist in the database.
+        
+        Args:
+            entities: List of CikLookup entities to update
+        
+        Returns:
+            Number of rows successfully updated
+        
+        Raises:
+            DatabaseQueryError: If database operation fails
+        """
+        if not entities:
+            return 0
+        
+        # Validate all entities first
+        for entity in entities:
+            entity.validate()
+        
+        update_query = """
+        UPDATE cik_lookup
+        SET company_name = %s, last_updated_at = %s
+        WHERE cik = %s;
+        """
+        
+        current_time = datetime.now()
+        total_updated = 0
+        
+        try:
+            with self.db_manager.get_cursor_context() as cursor:
+                for entity in entities:
+                    cursor.execute(update_query, (
+                        entity.company_name,
+                        current_time,
+                        entity.cik
+                    ))
+                    if cursor.rowcount > 0:
+                        total_updated += 1
+                        entity.last_updated_at = current_time
+                
+                self.logger.info(f"Bulk updated {total_updated} CIK lookups")
+                return total_updated
+                
+        except Exception as e:
+            raise DatabaseQueryError("bulk update CIK lookups", str(e))
+
     def exists(self, cik: int) -> bool:
         """
         Check if a CIK exists in the database.
