@@ -26,7 +26,9 @@ class CikLookup:
     last_updated_at: Optional[datetime] = None
     
     def __post_init__(self):
-        """Validate the CIK lookup data after initialization."""
+        """Clean and validate the CIK lookup data after initialization."""
+        # Clean company name
+        self.company_name = self.company_name.strip()
         self.validate()
     
     def validate(self):
@@ -37,18 +39,12 @@ class CikLookup:
             ValidationError: If validation fails
         """
         # Validate CIK
-        if self.cik < 0:
+        if self.cik <= 0:
             raise ValidationError("cik", self.cik, "CIK must be a positive integer")
         
         # Validate company name
         if not self.company_name:
             raise ValidationError("company_name", self.company_name, "Company name cannot be empty")
-        
-        # Clean and validate company name
-        self.company_name = self.company_name.strip()
-        
-        if len(self.company_name) == 0:
-            raise ValidationError("company_name", self.company_name, "Company name cannot be empty after cleaning")
         
         if len(self.company_name) > 255:
             raise ValidationError("company_name", self.company_name, "Company name cannot be longer than 255 characters")

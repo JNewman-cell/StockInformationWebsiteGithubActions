@@ -23,11 +23,11 @@ from data_layer import (
 from data_layer.repositories import CikLookupRepository
 from utils.utils import (
     fetch_ticker_data_from_github_repo,
-    process_tickers_in_batches,
-    create_cik_lookup_entities,
+    process_tickers_and_persist_ciks,
+    identify_ciks_to_delete,
+    delete_obsolete_ciks,
 )
 from entities.synchronization_result import SynchronizationResult
-from transformer.transformer import analyze_database_vs_source_ciks_for_synchronization_operations
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,116 +49,7 @@ def configure_sec_company_lookup():
     logger.info(f"Configured sec-company-lookup with email: {user_email}")
 
 
-def perform_synchronization_operations(
-    cik_repo: CikLookupRepository,
-    sync_result: SynchronizationResult
-) -> Dict[str, int]:
-    """
-    Execute the synchronization operations.
-    
-    Args:
-        cik_repo: CIK lookup repository instance
-        sync_result: SynchronizationResult containing operations to perform
-        
-    Returns:
-        Dictionary with operation counts
-    """
-    results = {
-        'added': 0,
-        'deleted': 0,
-        'updated': 0
-    }
-    
-    # 1. Delete CIKs that are no longer in the source (bulk operation)
-    if sync_result.to_delete:
-        logger.info(f"Bulk deleting {len(sync_result.to_delete)} CIK entries no longer in source data in batches of 500")
-        
-        # Process in batches of 500
-        batch_size = 500
-        total_deleted = 0
-        for i in range(0, len(sync_result.to_delete), batch_size):
-            batch = sync_result.to_delete[i:i + batch_size]
-            deleted = cik_repo.bulk_delete(batch)
-            total_deleted += deleted
-            logger.info(f"Deleted batch {i // batch_size + 1}: {deleted}/{len(batch)} CIKs")
-        
-        results['deleted'] = total_deleted
-        
-        if total_deleted > 0:
-            logger.info(f"Successfully deleted {total_deleted} CIK entries no longer in source")
-        
-        # Check if any deletions failed
-        failed_count = len(sync_result.to_delete) - total_deleted
-        if failed_count > 0:
-            logger.warning(f"Failed to delete {failed_count} CIK entries (not found in database)")
-    
-    # 1.1. Remove CIKs that have persistent errors (if any)
-    if sync_result.to_remove_due_to_errors:
-        logger.info(f"Bulk removing {len(sync_result.to_remove_due_to_errors)} CIK entries due to persistent errors in batches of 500")
-        
-        # Process in batches of 500
-        batch_size = 500
-        total_deleted = 0
-        for i in range(0, len(sync_result.to_remove_due_to_errors), batch_size):
-            batch = sync_result.to_remove_due_to_errors[i:i + batch_size]
-            deleted = cik_repo.bulk_delete(batch)
-            total_deleted += deleted
-            logger.info(f"Deleted batch {i // batch_size + 1}: {deleted}/{len(batch)} CIKs")
-        
-        results['deleted'] += total_deleted
-        
-        if total_deleted > 0:
-            logger.info(f"Successfully removed {total_deleted} CIK entries due to errors")
-        
-        # Check if any deletions failed
-        failed_count = len(sync_result.to_remove_due_to_errors) - total_deleted
-        if failed_count > 0:
-            logger.warning(f"Failed to remove {failed_count} CIK entries with errors (not found in database)")
-    
-    # 2. Add new CIK entries
-    if sync_result.to_add:
-        logger.info(f"Adding {len(sync_result.to_add)} new CIK entries in batches of 500")
-        
-        # Process in batches of 500
-        batch_size = 500
-        total_added = 0
-        for i in range(0, len(sync_result.to_add), batch_size):
-            batch = sync_result.to_add[i:i + batch_size]
-            affected = cik_repo.bulk_insert(batch)
-            total_added += affected
-            logger.info(f"Inserted batch {i // batch_size + 1}: {affected}/{len(batch)} CIKs")
-        
-        results['added'] = total_added
-        logger.info(f"Successfully added {results['added']} new CIK entries using bulk insert")
-    
-    # 3. Update existing CIK entries with changed company names
-    if sync_result.to_update:
-        # Note: These CIKs were not processed immediately during analysis (fallback case)
-        logger.info(f"Processing remaining {len(sync_result.to_update)} CIKs that need updates in batches of 500")
-        
-        # Process in batches of 500
-        batch_size = 500
-        total_updated = 0
-        for i in range(0, len(sync_result.to_update), batch_size):
-            batch = sync_result.to_update[i:i + batch_size]
-            updated = cik_repo.bulk_update(batch)
-            total_updated += updated
-            logger.info(f"Updated batch {i // batch_size + 1}: {updated}/{len(batch)} CIKs")
-        
-        results['updated'] += total_updated
-        logger.info(f"Successfully updated remaining {total_updated} CIKs using bulk update")
-    else:
-        logger.info("All CIK updates were processed immediately during analysis phase")
-    
-    # 4. Update timestamps for truly unchanged CIKs (verified against source data)
-    if sync_result.unchanged:
-        logger.info(f"Updating timestamps for {len(sync_result.unchanged)} verified unchanged CIKs")
-        # Note: For CIKs, we don't need to update timestamps as frequently as stocks
-        # since CIK data is more stable. This is optional and can be removed if not needed.
-        pass
-    
-    logger.info(f"Synchronization operations complete: {results}")
-    return results
+
 
 
 def check_database_connectivity(db_manager: DatabaseConnectionManager, cik_repo: CikLookupRepository) -> bool:
@@ -204,17 +95,18 @@ def print_final_synchronization_statistics(
     
     Args:
         cik_repo: CIK lookup repository instance
-        operation_results: Dictionary with operation counts
+        operation_results: Dictionary with operation counts (added, updated, deleted)
         sync_result: SynchronizationResult with details
     """
     logger.info("=== Synchronization Complete ===")
     
     # Print operation results
     logger.info(f"""
-Bulk Operation Results:
-  - Added: {operation_results['added']} CIK entries (via bulk insert)
-  - Deleted: {operation_results['deleted']} CIK entries (via bulk delete)
-  - Updated: {operation_results['updated']} CIK entries (via bulk update)
+Synchronization Results (with immediate persistence):
+  - Added: {operation_results['added']} CIK entries (persisted immediately during lookup)
+  - Updated: {operation_results['updated']} CIK entries (persisted immediately during lookup)
+  - Deleted: {operation_results['deleted']} CIK entries (bulk delete)
+  - Unchanged: {len(sync_result.unchanged)} CIK entries
   - Failed ticker lookups: {len(sync_result.failed_ticker_lookups)}
     """)
     
@@ -225,18 +117,15 @@ Bulk Operation Results:
         logger.warning(f"Sample of failed ticker lookups: {', '.join(sample)}"
                       f"{'...' if len(sync_result.failed_ticker_lookups) > sample_size else ''}")
     
-    if sync_result.to_remove_due_to_errors:
-        logger.info(f"Removed CIK entries due to persistent errors: {', '.join(map(str, sync_result.to_remove_due_to_errors[:10]))}"
-                   f"{'...' if len(sync_result.to_remove_due_to_errors) > 10 else ''}")
-    
     # Print success summary
     total_operations = (operation_results['added'] + operation_results['deleted'] + 
                        operation_results['updated'])
-    print(f"\nSynchronization completed successfully using optimized bulk operations!")
+    print(f"\nSynchronization completed successfully with immediate persistence!")
     print(f"Total operations performed: {total_operations}")
-    print(f"  - {operation_results['added']} CIK entries added (bulk insert)")
-    print(f"  - {operation_results['deleted']} CIK entries deleted (bulk delete)") 
-    print(f"  - {operation_results['updated']} CIK entries updated (bulk update)")
+    print(f"  - {operation_results['added']} CIK entries added (persisted immediately)")
+    print(f"  - {operation_results['updated']} CIK entries updated (persisted immediately)")
+    print(f"  - {operation_results['deleted']} CIK entries deleted")
+    print(f"  - {len(sync_result.unchanged)} CIK entries unchanged")
     print(f"  - {len(sync_result.failed_ticker_lookups)} tickers failed CIK lookup")
     
     # Get final database statistics
@@ -282,52 +171,52 @@ def main():
         ticker_symbols = fetch_ticker_data_from_github_repo()
         logger.info(f"Loaded {len(ticker_symbols)} ticker symbols from GitHub repository")
         
-        # 2. Lookup CIK and company names for all tickers using sec-company-lookup
-        logger.info("Looking up CIK and company names using sec-company-lookup...")
-        ticker_cik_map, failed_tickers = process_tickers_in_batches(ticker_symbols, batch_size=100)
-        logger.info(f"Successfully looked up {len(ticker_cik_map)} tickers")
-        if failed_tickers:
-            logger.warning(f"{len(failed_tickers)} tickers failed CIK lookup")
-        
-        # 3. Create CikLookup entities (grouped by CIK)
-        logger.info("Creating CikLookup entities...")
-        source_ciks = create_cik_lookup_entities(ticker_cik_map)
-        logger.info(f"Created {len(source_ciks)} unique CIK entries")
-        
-        # 4. Get current database state
+        # 2. Get current database state
         logger.info("Retrieving current database state...")
         database_cik_list = cik_repo.get_all()
         database_ciks = {cik_lookup.cik: cik_lookup for cik_lookup in database_cik_list}
         logger.info(f"Found {len(database_ciks)} CIK entries currently in database")
         
-        # 5. Analyze differences and determine operations
-        logger.info("Analyzing differences between source and database...")
-
-        # Create batch update function for immediate processing
-        def batch_update_ciks(ciks_batch):
-            return cik_repo.bulk_update(ciks_batch)
-
-        sync_result = analyze_database_vs_source_ciks_for_synchronization_operations(database_ciks, source_ciks, batch_update_ciks)
-
-        # Store failed ticker lookups in sync_result
-        sync_result.failed_ticker_lookups = failed_tickers
-
+        # 3. Process tickers in batches: lookup CIKs and persist immediately
+        # This is the key improvement - data is saved incrementally as it's retrieved
+        logger.info("Processing tickers and persisting CIKs immediately...")
+        sync_result = process_tickers_and_persist_ciks(ticker_symbols, cik_repo, database_ciks)
+        
         stats = sync_result.get_stats()
         logger.info(f"""
-Synchronization Analysis Results:
-  - CIKs to ADD (new in sources): {stats['to_add']}
-  - CIKs to DELETE (removed from sources): {stats['to_delete']}
-  - CIKs to REMOVE (due to errors): {stats['to_remove_due_to_errors']}
-  - CIKs to UPDATE (changed company names): {stats['to_update']}
+Lookup and Persistence Results:
+  - CIKs ADDED (new in sources): {stats['to_add']}
+  - CIKs UPDATED (changed company names): {stats['to_update']}
   - CIKs UNCHANGED: {stats['unchanged']}
+  - Failed ticker lookups: {stats['failed_ticker_lookups']}
         """)
         
-        # 6. Perform synchronization operations
-        logger.info("Executing synchronization operations...")
-        operation_results = perform_synchronization_operations(cik_repo, sync_result)
+        # 4. Identify and delete CIKs that are no longer in source data
+        logger.info("Identifying obsolete CIKs...")
+        processed_ciks = set()
+        for cik_lookup in sync_result.to_add:
+            processed_ciks.add(cik_lookup.cik)
+        for cik_lookup in sync_result.to_update:
+            processed_ciks.add(cik_lookup.cik)
+        processed_ciks.update(sync_result.unchanged)
         
-        # 7. Print final statistics
-        print_final_synchronization_statistics(cik_repo, operation_results, sync_result)
+        ciks_to_delete = identify_ciks_to_delete(database_ciks, processed_ciks)
+        
+        if ciks_to_delete:
+            logger.info(f"Deleting {len(ciks_to_delete)} obsolete CIKs...")
+            deleted_count = delete_obsolete_ciks(cik_repo, ciks_to_delete)
+            sync_result.to_delete = ciks_to_delete
+        else:
+            logger.info("No obsolete CIKs to delete")
+            deleted_count = 0
+        
+        # 5. Print final statistics
+        final_stats = {
+            'added': len(sync_result.to_add),
+            'updated': len(sync_result.to_update),
+            'deleted': deleted_count
+        }
+        print_final_synchronization_statistics(cik_repo, final_stats, sync_result)
     
     except Exception as e:
         logger.error(f"Error during synchronization: {e}")

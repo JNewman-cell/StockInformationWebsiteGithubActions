@@ -67,8 +67,6 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             DatabaseQueryError: If database operation fails
         """
         cik_lookup = entity
-        # Validate the CIK lookup
-        cik_lookup.validate()
         
         # Check if CIK already exists
         if self.get_by_cik(cik_lookup.cik) is not None:
@@ -121,10 +119,6 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         """
         if not entities:
             return 0
-        
-        # Validate all entities first
-        for entity in entities:
-            entity.validate()
         
         insert_query = """
         INSERT INTO cik_lookup (cik, company_name, created_at, last_updated_at)
@@ -405,7 +399,6 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             DatabaseQueryError: If database operation fails
         """
         cik_lookup = entity
-        cik_lookup.validate()
         
         # Check if the CIK exists
         existing = self.get_by_cik(cik_lookup.cik)
@@ -481,10 +474,6 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         """
         if not entities:
             return 0
-        
-        # Validate all entities first
-        for entity in entities:
-            entity.validate()
         
         update_query = """
         UPDATE cik_lookup

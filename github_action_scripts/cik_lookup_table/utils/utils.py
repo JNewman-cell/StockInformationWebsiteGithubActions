@@ -5,16 +5,18 @@ Utility functions for CIK lookup table synchronization.
 import logging
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
 
 # Add data layer to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from data_layer.models import CikLookup
+from data_layer.repositories import CikLookupRepository
 
-# Add entities to path
+# Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from entities.synchronization_result import SynchronizationResult
+from constants import BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -134,111 +136,167 @@ def lookup_cik_and_company_name_batch(tickers: List[str]) -> Tuple[Dict[str, Tup
     return results, failed_tickers
 
 
-def process_tickers_in_batches(tickers: List[str], batch_size: int = 100) -> Tuple[Dict[str, Tuple[int, str]], List[str]]:
+def process_tickers_and_persist_ciks(
+    tickers: List[str],
+    cik_repo: CikLookupRepository,
+    database_ciks: Dict[int, CikLookup]
+) -> SynchronizationResult:
     """
-    Process tickers in batches to avoid overwhelming the API.
+    Process tickers in batches, lookup CIKs, and immediately persist to database.
+    This ensures data is saved incrementally as it's retrieved, not all at once.
     
     Args:
         tickers: List of ticker symbols to process
-        batch_size: Number of tickers to process per batch
+        cik_repo: CIK lookup repository for database operations
+        database_ciks: Dictionary of existing CIKs in database for comparison
         
     Returns:
-        Tuple of:
-        - Dictionary mapping ticker to (cik, company_name) tuples
-        - List of all tickers that failed lookup
+        SynchronizationResult containing operation statistics
     """
-    all_results = {}
-    all_failed = []
+    sync_result = SynchronizationResult()
+    total_batches = (len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE
     
-    total_batches = (len(tickers) + batch_size - 1) // batch_size
+    logger.info(f"Processing {len(tickers)} tickers in {total_batches} batches of {BATCH_SIZE}")
     
-    for i in range(0, len(tickers), batch_size):
-        batch = tickers[i:i + batch_size]
-        batch_num = (i // batch_size) + 1
+    for i in range(0, len(tickers), BATCH_SIZE):
+        batch = tickers[i:i + BATCH_SIZE]
+        batch_num = (i // BATCH_SIZE) + 1
         
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} tickers)...")
         
+        # Lookup CIKs for this batch
         batch_results, batch_failed = lookup_cik_and_company_name_batch(batch)
         
-        all_results.update(batch_results)
-        all_failed.extend(batch_failed)
-    
-    return all_results, all_failed
-
-
-def create_cik_lookup_entities(ticker_cik_map: Dict[str, Tuple[int, str]]) -> Dict[int, CikLookup]:
-    """
-    Create CikLookup entities from ticker to CIK/company name mapping.
-    Groups by CIK since multiple tickers can map to the same CIK.
-    
-    Args:
-        ticker_cik_map: Dictionary mapping ticker to (cik, company_name) tuples
+        # Track failed lookups
+        sync_result.failed_ticker_lookups.extend(batch_failed)
         
-    Returns:
-        Dictionary mapping CIK to CikLookup entity
-    """
-    cik_entities = {}
-    
-    for ticker, (cik, company_name) in ticker_cik_map.items():
-        if cik not in cik_entities:
-            # Create new CikLookup entity
-            try:
-                cik_lookup = CikLookup(cik=cik, company_name=company_name)
-                cik_entities[cik] = cik_lookup
-            except Exception as e:
-                logger.warning(f"Failed to create CikLookup for CIK {cik} ({company_name}): {e}")
-        else:
-            # CIK already exists, verify company name matches
-            existing = cik_entities[cik]
-            if existing.company_name != company_name:
-                logger.debug(f"CIK {cik} has multiple company names: '{existing.company_name}' vs '{company_name}'")
-    
-    logger.info(f"Created {len(cik_entities)} unique CikLookup entities from {len(ticker_cik_map)} tickers")
-    
-    return cik_entities
-
-
-def analyze_synchronization_operations(
-    database_ciks: Dict[int, CikLookup],
-    source_ciks: Dict[int, CikLookup]
-) -> SynchronizationResult:
-    """
-    Analyze differences between database and source CIK data.
-    
-    Args:
-        database_ciks: Dictionary of CIK to CikLookup entities currently in database
-        source_ciks: Dictionary of CIK to CikLookup entities from source data
+        # Group results by CIK (multiple tickers can map to same CIK)
+        cik_to_company_name = {}
+        for ticker, (cik, company_name) in batch_results.items():
+            if cik not in cik_to_company_name:
+                cik_to_company_name[cik] = company_name
+            elif cik_to_company_name[cik] != company_name:
+                logger.debug(f"CIK {cik} has multiple company names: '{cik_to_company_name[cik]}' vs '{company_name}'")
         
-    Returns:
-        SynchronizationResult containing operations to perform
-    """
-    sync_result = SynchronizationResult()
-    
-    # Find CIKs to add (in source but not in database)
-    for cik, cik_lookup in source_ciks.items():
-        if cik not in database_ciks:
-            sync_result.to_add.append(cik_lookup)
-    
-    # Find CIKs to delete (in database but not in source)
-    for cik in database_ciks.keys():
-        if cik not in source_ciks:
-            sync_result.to_delete.append(cik)
-    
-    # Find CIKs to update (company name changed) or unchanged
-    for cik, source_lookup in source_ciks.items():
-        if cik in database_ciks:
-            db_lookup = database_ciks[cik]
-            if db_lookup.company_name != source_lookup.company_name:
-                # Keep the database timestamps, just update the company name
-                source_lookup.created_at = db_lookup.created_at
-                source_lookup.last_updated_at = db_lookup.last_updated_at
-                sync_result.to_update.append(source_lookup)
+        # Categorize CIKs and persist immediately
+        ciks_to_add = []
+        ciks_to_update = []
+        
+        for cik, company_name in cik_to_company_name.items():
+            if cik in database_ciks:
+                # CIK exists - check if company name changed
+                existing = database_ciks[cik]
+                if existing.company_name != company_name:
+                    # Company name changed - update it
+                    updated_cik = CikLookup(
+                        cik=cik,
+                        company_name=company_name,
+                        created_at=existing.created_at,
+                        last_updated_at=existing.last_updated_at
+                    )
+                    ciks_to_update.append(updated_cik)
+                else:
+                    # Unchanged - track it
+                    sync_result.unchanged.append(cik)
             else:
-                # Unchanged CIK
-                sync_result.unchanged.append(cik)
+                # New CIK - add it
+                new_cik = CikLookup(cik=cik, company_name=company_name)
+                ciks_to_add.append(new_cik)
+        
+        # Immediately persist new CIKs to database
+        if ciks_to_add:
+            try:
+                added_count = cik_repo.bulk_insert(ciks_to_add)
+                logger.info(f"Batch {batch_num}: Added {added_count} new CIKs to database")
+                sync_result.to_add.extend(ciks_to_add)
+                # Update local cache so subsequent batches see these as existing
+                for cik_lookup in ciks_to_add:
+                    database_ciks[cik_lookup.cik] = cik_lookup
+            except Exception as e:
+                logger.error(f"Batch {batch_num}: Failed to add CIKs: {e}")
+                raise
+        
+        # Immediately persist updated CIKs to database
+        if ciks_to_update:
+            try:
+                updated_count = cik_repo.bulk_update(ciks_to_update)
+                logger.info(f"Batch {batch_num}: Updated {updated_count} CIKs in database")
+                sync_result.to_update.extend(ciks_to_update)
+                # Update local cache with new company names
+                for cik_lookup in ciks_to_update:
+                    database_ciks[cik_lookup.cik] = cik_lookup
+            except Exception as e:
+                logger.error(f"Batch {batch_num}: Failed to update CIKs: {e}")
+                raise
     
-    stats = sync_result.get_stats()
-    logger.info(f"Analysis: {stats['to_add']} to add, {stats['to_delete']} to delete, "
-                f"{stats['to_update']} to update, {stats['unchanged']} unchanged")
+    logger.info(f"Completed processing all {total_batches} batches")
+    logger.info(f"Total: {len(sync_result.to_add)} added, {len(sync_result.to_update)} updated, "
+                f"{len(sync_result.unchanged)} unchanged, {len(sync_result.failed_ticker_lookups)} failed lookups")
     
     return sync_result
+
+
+def identify_ciks_to_delete(
+    database_ciks: Dict[int, CikLookup],
+    processed_ciks: Set[int]
+) -> List[int]:
+    """
+    Identify CIKs in database that were not found in the source data.
+    These should be deleted as they are no longer valid.
+    
+    Args:
+        database_ciks: Dictionary of all CIKs currently in database
+        processed_ciks: Set of CIK numbers that were found in source data
+        
+    Returns:
+        List of CIK numbers to delete from database
+    """
+    ciks_to_delete = []
+    
+    for cik in database_ciks.keys():
+        if cik not in processed_ciks:
+            ciks_to_delete.append(cik)
+    
+    if ciks_to_delete:
+        logger.info(f"Found {len(ciks_to_delete)} CIKs in database that are not in source data")
+    
+    return ciks_to_delete
+
+
+def delete_obsolete_ciks(
+    cik_repo: CikLookupRepository,
+    ciks_to_delete: List[int]
+) -> int:
+    """
+    Delete CIKs from database that are no longer in source data.
+    
+    Args:
+        cik_repo: CIK lookup repository for database operations
+        ciks_to_delete: List of CIK numbers to delete
+        
+    Returns:
+        Number of CIKs successfully deleted
+    """
+    if not ciks_to_delete:
+        logger.info("No obsolete CIKs to delete")
+        return 0
+    
+    logger.info(f"Deleting {len(ciks_to_delete)} obsolete CIKs in batches of {BATCH_SIZE}")
+    
+    total_deleted = 0
+    total_batches = (len(ciks_to_delete) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    for i in range(0, len(ciks_to_delete), BATCH_SIZE):
+        batch = ciks_to_delete[i:i + BATCH_SIZE]
+        batch_num = (i // BATCH_SIZE) + 1
+        
+        try:
+            deleted_count = cik_repo.bulk_delete(batch)
+            total_deleted += deleted_count
+            logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {deleted_count}/{len(batch)} CIKs")
+        except Exception as e:
+            logger.error(f"Delete batch {batch_num}: Failed to delete CIKs: {e}")
+            raise
+    
+    logger.info(f"Successfully deleted {total_deleted} obsolete CIKs from database")
+    return total_deleted

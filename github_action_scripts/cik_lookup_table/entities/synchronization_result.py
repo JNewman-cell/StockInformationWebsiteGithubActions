@@ -24,7 +24,6 @@ class SynchronizationResult:
         self.to_update: List[CikLookup] = []  # CIK entries to update
         self.unchanged: List[int] = []  # CIKs that are unchanged
         self.failed_ticker_lookups: List[str] = []  # tickers that failed CIK lookup
-        self.to_remove_due_to_errors: List[int] = []  # CIKs to remove due to persistent errors
         
     def get_stats(self) -> Dict[str, int]:
         """Get summary statistics."""
@@ -34,5 +33,4 @@ class SynchronizationResult:
             'to_update': len(self.to_update),
             'unchanged': len(self.unchanged),
             'failed_ticker_lookups': len(self.failed_ticker_lookups),
-            'to_remove_due_to_errors': len(self.to_remove_due_to_errors)
         }
