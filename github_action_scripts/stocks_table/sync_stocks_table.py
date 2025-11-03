@@ -59,25 +59,51 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
     
     # 1. Delete stocks that are no longer in the source (bulk operation)
     if sync_result.to_delete:
-        logger.info(f"Bulk deleting {len(sync_result.to_delete)} stocks no longer in source data")
-        deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_delete))
-        results['deleted'] += deleted_count
+        logger.info(f"Bulk deleting {len(sync_result.to_delete)} stocks no longer in source data in batches of 500")
         
-        if deleted_count > 0:
-            logger.info(f"Successfully deleted {deleted_count} stocks no longer in source")
-        if failed_count > 0:
-            logger.warning(f"Failed to delete {failed_count} stocks (not found in database)")
+        # Process in batches of 500
+        batch_size = 500
+        to_delete_list = list(sync_result.to_delete)
+        total_deleted = 0
+        total_failed = 0
+        
+        for i in range(0, len(to_delete_list), batch_size):
+            batch = to_delete_list[i:i + batch_size]
+            deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(batch)
+            total_deleted += deleted_count
+            total_failed += failed_count
+            logger.info(f"Deleted batch {i // batch_size + 1}: {deleted_count}/{len(batch)} stocks")
+        
+        results['deleted'] += total_deleted
+        
+        if total_deleted > 0:
+            logger.info(f"Successfully deleted {total_deleted} stocks no longer in source")
+        if total_failed > 0:
+            logger.warning(f"Failed to delete {total_failed} stocks (not found in database)")
     
     # 1.1. Remove stocks that have persistent API errors (bulk operation)
     if sync_result.to_remove_due_to_errors:
-        logger.info(f"Bulk removing {len(sync_result.to_remove_due_to_errors)} stocks due to persistent API errors")
-        deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(list(sync_result.to_remove_due_to_errors))
-        results['deleted'] += deleted_count
+        logger.info(f"Bulk removing {len(sync_result.to_remove_due_to_errors)} stocks due to persistent API errors in batches of 500")
         
-        if deleted_count > 0:
-            logger.info(f"Successfully removed {deleted_count} stocks due to API errors")
-        if failed_count > 0:
-            logger.warning(f"Failed to remove {failed_count} stocks with API errors (not found in database)")
+        # Process in batches of 500
+        batch_size = 500
+        to_remove_list = list(sync_result.to_remove_due_to_errors)
+        total_deleted = 0
+        total_failed = 0
+        
+        for i in range(0, len(to_remove_list), batch_size):
+            batch = to_remove_list[i:i + batch_size]
+            deleted_count, failed_count = stock_repo.bulk_delete_by_symbols(batch)
+            total_deleted += deleted_count
+            total_failed += failed_count
+            logger.info(f"Deleted batch {i // batch_size + 1}: {deleted_count}/{len(batch)} stocks")
+        
+        results['deleted'] += total_deleted
+        
+        if total_deleted > 0:
+            logger.info(f"Successfully removed {total_deleted} stocks due to API errors")
+        if total_failed > 0:
+            logger.warning(f"Failed to remove {total_failed} stocks with API errors (not found in database)")
     
     # 2. Add new stocks (with validation)
     if sync_result.to_add:
@@ -95,15 +121,24 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
                 )
                 stocks_to_add.append(stock)
             
-            # Use bulk insert - no fallback needed with optimized bulk operations
-            created_stocks = stock_repo.bulk_insert(stocks_to_add)
-            results['added'] = len(created_stocks)
+            # Process in batches of 500
+            logger.info(f"Inserting {len(stocks_to_add)} validated stocks in batches of 500")
+            batch_size = 500
+            total_added = 0
+            
+            for i in range(0, len(stocks_to_add), batch_size):
+                batch = stocks_to_add[i:i + batch_size]
+                created_stocks = stock_repo.bulk_insert(batch)
+                total_added += len(created_stocks)
+                logger.info(f"Inserted batch {i // batch_size + 1}: {len(created_stocks)}/{len(batch)} stocks")
+            
+            results['added'] = total_added
             logger.info(f"Successfully added {results['added']} new stocks using bulk insert")
     
     # 3. Update existing stocks (processed immediately during analysis phase)
     if sync_result.to_update:
         # Note: These stocks were not processed immediately during analysis (fallback case)
-        logger.info(f"Processing remaining {len(sync_result.to_update)} stocks that need updates")
+        logger.info(f"Processing remaining {len(sync_result.to_update)} stocks that need updates in batches of 500")
         
         # Ensure all stocks have proper timestamps
         current_time = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -111,18 +146,36 @@ def perform_synchronization_operations(stock_repo, sync_result, database_stocks)
             if stock.last_updated_at is None or stock.last_updated_at == stock.created_at:
                 stock.last_updated_at = current_time
         
-        # Process remaining updates using optimized bulk operation
-        updated_count = stock_repo.bulk_update_stocks(sync_result.to_update)
-        results['updated'] += updated_count
-        logger.info(f"Successfully updated remaining {updated_count} stocks using bulk update")
+        # Process in batches of 500
+        batch_size = 500
+        total_updated = 0
+        
+        for i in range(0, len(sync_result.to_update), batch_size):
+            batch = sync_result.to_update[i:i + batch_size]
+            updated_count = stock_repo.bulk_update_stocks(batch)
+            total_updated += updated_count
+            logger.info(f"Updated batch {i // batch_size + 1}: {updated_count}/{len(batch)} stocks")
+        
+        results['updated'] += total_updated
+        logger.info(f"Successfully updated remaining {total_updated} stocks using bulk update")
     else:
         logger.info("All stock updates were processed immediately during analysis phase")
     
     # 4. Update timestamps for truly unchanged stocks (already verified against Yahoo Finance)
     if sync_result.unchanged:
-        logger.info(f"Updating timestamps for {len(sync_result.unchanged)} verified unchanged stocks")
-        updated_count = stock_repo.bulk_update_timestamps(sync_result.unchanged)
-        logger.info(f"Successfully updated timestamps for {updated_count} unchanged stocks using bulk operation")
+        logger.info(f"Updating timestamps for {len(sync_result.unchanged)} verified unchanged stocks in batches of 500")
+        
+        # Process in batches of 500
+        batch_size = 500
+        total_updated = 0
+        
+        for i in range(0, len(sync_result.unchanged), batch_size):
+            batch = sync_result.unchanged[i:i + batch_size]
+            updated_count = stock_repo.bulk_update_timestamps(batch)
+            total_updated += updated_count
+            logger.info(f"Updated timestamps batch {i // batch_size + 1}: {updated_count}/{len(batch)} stocks")
+        
+        logger.info(f"Successfully updated timestamps for {total_updated} unchanged stocks using bulk operation")
     
     logger.info(f"Synchronization operations complete: {results}")
     return results

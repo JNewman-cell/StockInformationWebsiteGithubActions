@@ -141,79 +141,6 @@ def parse_ticker_symbols_from_exchange_file(file_path: str) -> List[Tuple[str, O
         logger.error(f"Error reading ticker file {file_path}: {e}")
         return []
 
-
-def fetch_individual_stock_data_from_yahoo_finance(symbol: str) -> Optional[Dict[str, Any]]:
-    """Fallback function to get individual ticker info when batch processing fails.
-    
-    Args:
-        symbol: Stock symbol
-        
-    Returns:
-        Dict with ticker data or None if failed
-    """
-    try:
-        stock = yq.Ticker(symbol)
-        summary_data = stock.summary_detail
-        profile_data = stock.asset_profile
-        
-        if symbol not in summary_data or summary_data[symbol] is None:
-            return None
-
-        # Detect structured or legacy error messages in the summary payload
-        if _has_error(summary_data[symbol]):
-            logger.debug(f"Error fetching summary data from yahoo for {symbol}: {_extract_error_message(summary_data[symbol])}")
-            return None
-
-        symbol_info = summary_data[symbol]
-        market_cap = symbol_info.get('marketCap')
-        
-        if market_cap is None or market_cap == 0:
-            return None
-            
-        # Get company name from multiple sources (yahooquery fork has different structure)
-        company_name = None
-        
-        # Try quote_type first (most reliable for company names)
-        try:
-            quote_type_data = stock.quote_type
-            if (symbol in quote_type_data and 
-                quote_type_data[symbol] is not None):
-                company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
-        except:
-            pass
-        
-        # Fallback to price data if quote_type failed
-        if not company_name:
-            try:
-                price_data = stock.price
-                if (symbol in price_data and 
-                    price_data[symbol] is not None):
-                    company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
-            except:
-                pass
-        
-        # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
-        if not company_name:
-            if (symbol in profile_data and 
-                profile_data[symbol] is not None):
-
-                if not _has_error(profile_data[symbol]):
-                    profile_info = profile_data[symbol]
-                    company_name = profile_info.get('longName')
-                else:
-                    logger.error(f"Error fetching profile data from yahoo for {symbol}: {_extract_error_message(profile_data[symbol])}")
-        
-        return {
-            'symbol': symbol,
-            'company': company_name,
-            'market_cap': market_cap
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting individual ticker info for {symbol}: {e}")
-        return None
-
-
 def fetch_and_validate_stocks_from_yahoo_finance_api(
     symbols: List[str], 
     process_stocks_batch_func: Callable[[List[Dict[str, Any]]], Tuple[int, int]], 
@@ -243,103 +170,93 @@ def fetch_and_validate_stocks_from_yahoo_finance_api(
         logger.info(f"Processing batch {i//batch_size + 1}/{(len(symbols) + batch_size - 1)//batch_size} with {len(batch_symbols)} symbols")
         
         batch_ticker_data = []  # Collect data for this batch only
-        
-        try:
-            # Create Ticker object with batch of symbols and asynchronous processing
-            # Validate True to skip invalid symbols automatically, but we still don't want to add tickers that don't have market cap from summary detail
-            stock = yq.Ticker(
-                batch_symbols,
-                asynchronous=True,
-                max_workers=MAX_WORKERS,
-                validate=True
-            )
-            
-            # Get basic info for all symbols at once
-            summary_data = stock.summary_detail
-            profile_data = stock.asset_profile
-            
-            # Get company name data from correct sources
-            quote_type_data = None
-            price_data = None
-            try:
-                quote_type_data = stock.quote_type
-                price_data = stock.price
-            except Exception as e:
-                logger.debug(f"Could not get company name data: {e}")
-            
-            # Check for invalid symbols
-            if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
-                logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
-            
-            # Process each symbol in the batch
-            for symbol in batch:
-                try:
-                    # Skip if symbol was marked as invalid
-                    if hasattr(stock, 'invalid_symbols') and symbol in stock.invalid_symbols:
-                        logger.warning(f"Skipping invalid symbol: {symbol}")
-                        continue
-                    
-                    # Check if we have summary data for this symbol
-                    if symbol not in summary_data or summary_data[symbol] is None:
-                        logger.warning(f"No summary data available for symbol: {symbol}")
-                        continue
-                    
-                    # Check if there's an error in the data (legacy or structured)
-                    if _has_error(summary_data[symbol]):
-                        logger.warning(f"Error fetching summary data from yahoo for {symbol}: {_extract_error_message(summary_data[symbol])}")
-                        continue
-                        
-                    symbol_info = summary_data[symbol]
-                    
-                    # Extract market cap to validate the ticker has data
-                    market_cap = symbol_info.get('marketCap')
-                    if market_cap is None or market_cap == 0:
-                        logger.warning(f"No market cap available for symbol: {symbol}")
-                        continue
-                        
-                    # Get company name from multiple sources (yahooquery fork has different structure)
-                    company_name = None
-                    
-                    # Try quote_type first (most reliable for company names)
-                    if quote_type_data and symbol in quote_type_data and quote_type_data[symbol] is not None:
-                        company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
-                    
-                    # Fallback to price data if quote_type failed
-                    if not company_name and price_data and symbol in price_data and price_data[symbol] is not None:
-                        company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
-                    
-                    # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
-                    if not company_name:
-                        if (symbol in profile_data and 
-                            profile_data[symbol] is not None):
 
-                            if not _has_error(profile_data[symbol]):
-                                profile_info = profile_data[symbol]
-                                company_name = profile_info.get('longName')
-                            else:
-                                logger.error(f"Error fetching profile data from yahoo for {symbol} during batch processing: {_extract_error_message(profile_data[symbol])}")
-                    
-                    ticker_data = {
-                        'symbol': symbol,
-                        'company': company_name,
-                        'market_cap': market_cap  # We'll use this for validation but not store it
-                    }
-                    
-                    batch_ticker_data.append(ticker_data)
-                    logger.debug(f"Successfully processed symbol: {symbol}")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing symbol {symbol}: {e}")
+        # Create Ticker object with batch of symbols and asynchronous processing
+        # Validate True to skip invalid symbols automatically, but we still don't want to add tickers that don't have market cap from summary detail
+        stock = yq.Ticker(
+            batch_symbols,
+            asynchronous=True,
+            max_workers=MAX_WORKERS,
+            validate=True
+        )
+        
+        # Get basic info for all symbols at once
+        summary_data = stock.summary_detail
+        profile_data = stock.asset_profile
+        
+        # Get company name data from correct sources
+        quote_type_data = None
+        price_data = None
+        try:
+            quote_type_data = stock.quote_type
+            price_data = stock.price
+        except Exception as e:
+            logger.debug(f"Could not get company name data: {e}")
+        
+        # Check for invalid symbols
+        if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
+            logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
+        
+        # Process each symbol in the batch
+        for symbol in batch:
+            try:
+                # Skip if symbol was marked as invalid
+                if hasattr(stock, 'invalid_symbols') and symbol in stock.invalid_symbols:
+                    logger.warning(f"Skipping invalid symbol: {symbol}")
+                    continue
+                
+                # Check if we have summary data for this symbol
+                if symbol not in summary_data or summary_data[symbol] is None:
+                    logger.warning(f"No summary data available for symbol: {symbol}")
+                    continue
+                
+                # Check if there's an error in the data (legacy or structured)
+                if _has_error(summary_data[symbol]):
+                    logger.warning(f"Error fetching summary data from yahoo for {symbol}: {_extract_error_message(summary_data[symbol])}")
                     continue
                     
-        except Exception as e:
-            logger.error(f"Error processing batch: {e}")
-            # Fall back to individual processing for this batch if batch processing fails
-            logger.info("Falling back to individual symbol processing for this batch")
-            for symbol in batch:
-                individual_data = fetch_individual_stock_data_from_yahoo_finance(symbol)
-                if individual_data:
-                    batch_ticker_data.append(individual_data)
+                symbol_info = summary_data[symbol]
+                
+                # Extract market cap to validate the ticker has data
+                market_cap = symbol_info.get('marketCap')
+                if market_cap is None or market_cap == 0:
+                    logger.warning(f"No market cap available for symbol: {symbol}")
+                    continue
+                    
+                # Get company name from multiple sources (yahooquery fork has different structure)
+                company_name = None
+                
+                # Try quote_type first (most reliable for company names)
+                if quote_type_data and symbol in quote_type_data and quote_type_data[symbol] is not None:
+                    company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
+                
+                # Fallback to price data if quote_type failed
+                if not company_name and price_data and symbol in price_data and price_data[symbol] is not None:
+                    company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
+                
+                # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
+                if not company_name:
+                    if (symbol in profile_data and 
+                        profile_data[symbol] is not None):
+
+                        if not _has_error(profile_data[symbol]):
+                            profile_info = profile_data[symbol]
+                            company_name = profile_info.get('longName')
+                        else:
+                            logger.error(f"Error fetching profile data from yahoo for {symbol} during batch processing: {_extract_error_message(profile_data[symbol])}")
+                
+                ticker_data = {
+                    'symbol': symbol,
+                    'company': company_name,
+                    'market_cap': market_cap  # We'll use this for validation but not store it
+                }
+                
+                batch_ticker_data.append(ticker_data)
+                logger.debug(f"Successfully processed symbol: {symbol}")
+                
+            except Exception as e:
+                logger.error(f"Error processing symbol {symbol}: {e}")
+                continue
         
         # Process this batch immediately if we have data
         if batch_ticker_data:
@@ -424,107 +341,92 @@ def validate_stock_symbols_market_cap_via_yahoo_finance_api(symbols_to_add: List
         symbols = batch  # batch is now just a list of symbol strings
         
         logger.info(f"Validating batch {i//batch_size + 1}/{(len(symbols_to_add) + batch_size - 1)//batch_size}")
+                
+        # Use Yahoo Finance API to get stock data
+        stock = yq.Ticker(
+            symbols,
+            asynchronous=True,
+            max_workers=MAX_WORKERS,
+            validate=True
+        )
+        summary_data = stock.summary_detail
+        profile_data = stock.asset_profile
         
+        # Get company name data from correct sources
+        quote_type_data = None
+        price_data = None
         try:
-            # Use Yahoo Finance API to get stock data
-            stock = yq.Ticker(
-                symbols,
-                asynchronous=True,
-                max_workers=MAX_WORKERS,
-                validate=True
-            )
-            summary_data = stock.summary_detail
-            profile_data = stock.asset_profile
-            
-            # Get company name data from correct sources
-            quote_type_data = None
-            price_data = None
-            try:
-                quote_type_data = stock.quote_type
-                price_data = stock.price
-            except Exception as e:
-                logger.debug(f"Could not get company name data: {e}")
-            
-            # Check for invalid symbols
-            if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
-                failed_symbols.extend(stock.invalid_symbols)
-                logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
-            
-            # Validate each symbol in the batch
-            for symbol in batch:
-                if symbol in failed_symbols:
-                    continue
-                
-                try:
-                    # Check if we have valid summary data
-                    if (symbol not in summary_data or 
-                        summary_data[symbol] is None):
-                        failed_symbols.append(symbol)
-                        logger.warning(f"No valid data for symbol: {symbol}")
-                        continue
-                    # Check for structured/legacy error
-                    if _has_error(summary_data[symbol]):
-                        failed_symbols.append(symbol)
-                        logger.warning(f"Error fetching summary data from yahoo for {symbol} during validation: {_extract_error_message(summary_data[symbol])}")
-                        continue
-                    
-                    symbol_info = summary_data[symbol]
-                    market_cap = symbol_info.get('marketCap')
-                    
-                    # Ensure the stock has a valid market cap
-                    if market_cap is None or market_cap == 0:
-                        failed_symbols.append(symbol)
-                        logger.warning(f"No market cap available for symbol: {symbol}")
-                        continue
-                    
-                    # Get company name from multiple sources (yahooquery fork has different structure)
-                    company_name = None
-                    
-                    # Try quote_type first (most reliable for company names)
-                    if quote_type_data and symbol in quote_type_data and quote_type_data[symbol] is not None:
-                        company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
-                    
-                    # Fallback to price data if quote_type failed
-                    if not company_name and price_data and symbol in price_data and price_data[symbol] is not None:
-                        company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
-                    
-                    # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
-                    if not company_name:
-                        if (symbol in profile_data and 
-                            profile_data[symbol] is not None):
-
-                            if not _has_error(profile_data[symbol]):
-                                profile_info = profile_data[symbol]
-                                company_name = profile_info.get('longName')
-                            else:
-                                logger.error(f"Error fetching profile data from yahoo for {symbol} during validation: {_extract_error_message(profile_data[symbol])}")
-                    
-                    # Stock is valid, add to valid list
-                    valid_stock_data = {
-                        'symbol': symbol,
-                        'company': company_name,
-                        'market_cap': market_cap
-                    }
-                    valid_stocks.append(valid_stock_data)
-                    logger.debug(f"Validated stock: {symbol}")
-                    
-                except Exception as e:
-                    failed_symbols.append(symbol)
-                    logger.error(f"Error validating symbol {symbol}: {e}")
-            
+            quote_type_data = stock.quote_type
+            price_data = stock.price
         except Exception as e:
-            logger.error(f"Error processing validation batch: {e}")
-            # Fall back to individual processing for this batch
-            logger.info("Falling back to individual validation for this batch")
-            for symbol in batch:
-                if symbol in failed_symbols:
+            logger.debug(f"Could not get company name data: {e}")
+        
+        # Check for invalid symbols
+        if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
+            failed_symbols.extend(stock.invalid_symbols)
+            logger.warning(f"Invalid symbols found: {stock.invalid_symbols}")
+        
+        # Validate each symbol in the batch
+        for symbol in batch:
+            if symbol in failed_symbols:
+                continue
+            
+            try:
+                # Check if we have valid summary data
+                if (symbol not in summary_data or 
+                    summary_data[symbol] is None):
+                    failed_symbols.append(symbol)
+                    logger.warning(f"No valid data for symbol: {symbol}")
+                    continue
+                # Check for structured/legacy error
+                if _has_error(summary_data[symbol]):
+                    failed_symbols.append(symbol)
+                    logger.warning(f"Error fetching summary data from yahoo for {symbol} during validation: {_extract_error_message(summary_data[symbol])}")
                     continue
                 
-                individual_data = fetch_individual_stock_data_from_yahoo_finance(symbol)
-                if individual_data:
-                    valid_stocks.append(individual_data)
-                else:
+                symbol_info = summary_data[symbol]
+                market_cap = symbol_info.get('marketCap')
+                
+                # Ensure the stock has a valid market cap
+                if market_cap is None or market_cap == 0:
                     failed_symbols.append(symbol)
+                    logger.warning(f"No market cap available for symbol: {symbol}")
+                    continue
+                
+                # Get company name from multiple sources (yahooquery fork has different structure)
+                company_name = None
+                
+                # Try quote_type first (most reliable for company names)
+                if quote_type_data and symbol in quote_type_data and quote_type_data[symbol] is not None:
+                    company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
+                
+                # Fallback to price data if quote_type failed
+                if not company_name and price_data and symbol in price_data and price_data[symbol] is not None:
+                    company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
+                
+                # Last resort: check profile_data (though it doesn't seem to have longName in this fork)
+                if not company_name:
+                    if (symbol in profile_data and 
+                        profile_data[symbol] is not None):
+
+                        if not _has_error(profile_data[symbol]):
+                            profile_info = profile_data[symbol]
+                            company_name = profile_info.get('longName')
+                        else:
+                            logger.error(f"Error fetching profile data from yahoo for {symbol} during validation: {_extract_error_message(profile_data[symbol])}")
+                
+                # Stock is valid, add to valid list
+                valid_stock_data = {
+                    'symbol': symbol,
+                    'company': company_name,
+                    'market_cap': market_cap
+                }
+                valid_stocks.append(valid_stock_data)
+                logger.debug(f"Validated stock: {symbol}")
+                
+            except Exception as e:
+                failed_symbols.append(symbol)
+                logger.error(f"Error validating symbol {symbol}: {e}")
     
     logger.info(f"Validation complete: {len(valid_stocks)} valid, {len(failed_symbols)} failed")
     return valid_stocks, failed_symbols
@@ -565,119 +467,104 @@ def compare_existing_stocks_with_yahoo_finance_data_for_updates(
         
         logger.info(f"Checking batch {i//batch_size + 1}/{(len(stocks_to_check) + batch_size - 1)//batch_size}")
         
+        # Get current data from Yahoo Finance
+        stock_yahoo = yq.Ticker(
+            symbols,
+            asynchronous=True,
+            max_workers=MAX_WORKERS,
+            validate=True
+        )
+        profile_data = stock_yahoo.asset_profile
+        
+        # Check for errors in profile_data
+        if symbols:  # Check if we have symbols to process
+            for symbol in symbols:
+                if (symbol in profile_data and 
+                    profile_data[symbol] is not None):
+                    if _has_error(profile_data[symbol]):
+                        logger.error(f"Error fetching profile data from yahoo for {symbol} during update check: {_extract_error_message(profile_data[symbol])}")
+                        failed_symbols.append(symbol)
+        
+        # Get company name data from correct sources
+        quote_type_data = None
+        price_data = None
         try:
-            # Get current data from Yahoo Finance
-            stock_yahoo = yq.Ticker(
-                symbols,
-                asynchronous=True,
-                max_workers=MAX_WORKERS,
-                validate=True
-            )
-            profile_data = stock_yahoo.asset_profile
+            quote_type_data = stock_yahoo.quote_type
+            price_data = stock_yahoo.price
+        except Exception as e:
+            logger.debug(f"Could not get company name data for update check: {e}")
+        
+        # Check each stock in the batch
+        for stock in batch:
+            symbol = stock.symbol
             
-            # Check for errors in profile_data
-            if symbols:  # Check if we have symbols to process
-                for symbol in symbols:
+            try:
+                # Get company name from multiple sources (yahooquery fork has different structure)
+                yahoo_company_name = None
+                
+                # Try quote_type first (most reliable for company names)
+                if quote_type_data and symbol in quote_type_data and quote_type_data[symbol] is not None:
+                    yahoo_company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
+                
+                # Fallback to price data if quote_type failed
+                if not yahoo_company_name and price_data and symbol in price_data and price_data[symbol] is not None:
+                    yahoo_company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
+                
+                # Last resort: check profile_data (with proper error checking)
+                if not yahoo_company_name:
                     if (symbol in profile_data and 
                         profile_data[symbol] is not None):
-                        if _has_error(profile_data[symbol]):
-                            logger.error(f"Error fetching profile data from yahoo for {symbol} during update check: {_extract_error_message(profile_data[symbol])}")
-                            failed_symbols.append(symbol)
-            
-            # Get company name data from correct sources
-            quote_type_data = None
-            price_data = None
-            try:
-                quote_type_data = stock_yahoo.quote_type
-                price_data = stock_yahoo.price
-            except Exception as e:
-                logger.debug(f"Could not get company name data for update check: {e}")
-            
-            # Check each stock in the batch
-            for stock in batch:
-                symbol = stock.symbol
-                
-                try:
-                    # Get company name from multiple sources (yahooquery fork has different structure)
-                    yahoo_company_name = None
-                    
-                    # Try quote_type first (most reliable for company names)
-                    if quote_type_data and symbol in quote_type_data and quote_type_data[symbol] is not None:
-                        yahoo_company_name = quote_type_data[symbol].get('longName') or quote_type_data[symbol].get('shortName')
-                    
-                    # Fallback to price data if quote_type failed
-                    if not yahoo_company_name and price_data and symbol in price_data and price_data[symbol] is not None:
-                        yahoo_company_name = price_data[symbol].get('longName') or price_data[symbol].get('shortName')
-                    
-                    # Last resort: check profile_data (with proper error checking)
-                    if not yahoo_company_name:
-                        if (symbol in profile_data and 
-                            profile_data[symbol] is not None):
-                            
-                            if not _has_error(profile_data[symbol]):
-                                profile_info = profile_data[symbol]
-                                yahoo_company_name = profile_info.get('longName')
-                            else:
-                                logger.error(f"Error fetching profile data for {symbol} in update check: {_extract_error_message(profile_data[symbol])}")
+                        
+                        if not _has_error(profile_data[symbol]):
+                            profile_info = profile_data[symbol]
+                            yahoo_company_name = profile_info.get('longName')
                         else:
-                            # No valid profile data available
-                            failed_symbols.append(symbol)
-                            continue
-                    
-                    # Compare company name to see if update is needed
-                    needs_update = False
-                    
-                    # If we don't have a company name but Yahoo does
-                    if stock.company is None and yahoo_company_name:
-                        needs_update = True
-                        stock.company = yahoo_company_name
-                    
-                    # If company names are different
-                    elif stock.company != yahoo_company_name and yahoo_company_name:
-                        needs_update = True
-                        stock.company = yahoo_company_name
-                    
-                    if needs_update:
-                        # Update the last_updated_at timestamp
-                        stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                        stocks_needing_updates.append(stock)
-                        logger.debug(f"Stock {symbol} needs update")
-                    
-                except Exception as e:
-                    failed_symbols.append(symbol)
-                    logger.error(f"Error checking stock {symbol} for updates: {e}")
-            
-            # Process updates for this batch immediately if callback provided
-            if update_batch_func and stocks_needing_updates:
-                batch_updates = []
-                for stock in stocks_needing_updates:
-                    if stock in batch:  # Only process stocks from current batch
-                        batch_updates.append(stock)
+                            logger.error(f"Error fetching profile data for {symbol} in update check: {_extract_error_message(profile_data[symbol])}")
+                    else:
+                        # No valid profile data available
+                        failed_symbols.append(symbol)
+                        continue
                 
-                if batch_updates:
-                    logger.info(f"Updating {len(batch_updates)} stocks from batch {i//batch_size + 1}")
-                    try:
-                        updated_count = update_batch_func(batch_updates)
-                        total_updated += updated_count
-                        logger.info(f"Successfully updated {updated_count} stocks from current batch")
-                        # Remove processed stocks from the main list since they're already updated
-                        stocks_needing_updates = [s for s in stocks_needing_updates if s not in batch_updates]
-                    except Exception as e:
-                        logger.error(f"Error in batch update for batch {i//batch_size + 1}: {e}")
+                # Compare company name to see if update is needed
+                needs_update = False
+                
+                # If we don't have a company name but Yahoo does
+                if stock.company is None and yahoo_company_name:
+                    needs_update = True
+                    stock.company = yahoo_company_name
+                
+                # If company names are different
+                elif stock.company != yahoo_company_name and yahoo_company_name:
+                    needs_update = True
+                    stock.company = yahoo_company_name
+                
+                if needs_update:
+                    # Update the last_updated_at timestamp
+                    stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    stocks_needing_updates.append(stock)
+                    logger.debug(f"Stock {symbol} needs update")
+                
+            except Exception as e:
+                failed_symbols.append(symbol)
+                logger.error(f"Error checking stock {symbol} for updates: {e}")
+        
+        # Process updates for this batch immediately if callback provided
+        if update_batch_func and stocks_needing_updates:
+            batch_updates = []
+            for stock in stocks_needing_updates:
+                if stock in batch:  # Only process stocks from current batch
+                    batch_updates.append(stock)
             
-        except Exception as e:
-            logger.error(f"Error processing update check batch: {e}")
-            # Fall back to individual processing
-            for stock in batch:
+            if batch_updates:
+                logger.info(f"Updating {len(batch_updates)} stocks from batch {i//batch_size + 1}")
                 try:
-                    individual_data = fetch_individual_stock_data_from_yahoo_finance(stock.symbol)
-                    if individual_data and individual_data.get('company') != stock.company:
-                        stock.company = individual_data.get('company')
-                        stock.last_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                        stocks_needing_updates.append(stock)
+                    updated_count = update_batch_func(batch_updates)
+                    total_updated += updated_count
+                    logger.info(f"Successfully updated {updated_count} stocks from current batch")
+                    # Remove processed stocks from the main list since they're already updated
+                    stocks_needing_updates = [s for s in stocks_needing_updates if s not in batch_updates]
                 except Exception as e:
-                    failed_symbols.append(stock.symbol)
-                    logger.error(f"Error in individual update check for {stock.symbol}: {e}")
+                    logger.error(f"Error in batch update for batch {i//batch_size + 1}: {e}")
     
     if update_batch_func:
         logger.info(f"Update check complete: {total_updated} stocks updated immediately, {len(failed_symbols)} failed")
