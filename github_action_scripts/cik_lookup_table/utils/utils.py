@@ -5,7 +5,7 @@ Utility functions for CIK lookup table synchronization.
 import logging
 import os
 import sys
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Tuple, Set, cast
 
 # Add data layer to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -32,7 +32,7 @@ def fetch_ticker_data_from_github_repo() -> List[str]:
     """
     import requests
     
-    tickers = []
+    tickers: List[str] = []
     
     # URL for the all tickers JSON file - contains symbols from all US exchanges
     url = 'https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/all/all_tickers.json'
@@ -49,10 +49,13 @@ def fetch_ticker_data_from_github_repo() -> List[str]:
             logger.error(f"Unexpected JSON format: expected list, got {type(ticker_symbols)}")
             raise RuntimeError("Invalid JSON format received from GitHub repository")
             
+        # Type cast to List[str] after validation
+        ticker_symbols = cast(List[str], ticker_symbols)
+            
         # Process each ticker symbol
         filtered_count = 0
         for ticker in ticker_symbols:
-            if isinstance(ticker, str) and ticker.strip():
+            if ticker.strip():
                 # Skip tickers with ^ character (preferred shares, warrants, etc.)
                 if '^' in ticker:
                     filtered_count += 1
@@ -98,22 +101,26 @@ def lookup_cik_and_company_name_batch(tickers: List[str]) -> Tuple[Dict[str, Tup
     """
     from sec_company_lookup import get_companies_by_tickers
     
-    results = {}
-    failed_tickers = []
+    results: Dict[str, Tuple[int, str]] = {}
+    failed_tickers: List[str] = []
     
     try:
         # Use batch lookup for efficiency
         logger.info(f"Looking up CIK and company names for {len(tickers)} tickers...")
         batch_results = get_companies_by_tickers(tickers)
         
+        if batch_results is None:
+            logger.error("Batch lookup returned None")
+            raise RuntimeError("Failed to lookup CIK and company names: batch lookup returned None")
+        
         for ticker in tickers:
-            if ticker in batch_results:
-                result = batch_results[ticker]
+            if ticker in batch_results:  # type: ignore
+                result = batch_results[ticker]  # type: ignore
                 
-                if result.get('success') and result.get('data'):
-                    company_data = result['data']
-                    cik = company_data.get('cik')
-                    name = company_data.get('name')
+                if result.get('success') and result.get('data'):  # type: ignore
+                    company_data = result['data']  # type: ignore
+                    cik = company_data.get('cik')  # type: ignore
+                    name = company_data.get('name')  # type: ignore
                     
                     if cik is not None and name:
                         results[ticker] = (cik, name)
@@ -121,7 +128,7 @@ def lookup_cik_and_company_name_batch(tickers: List[str]) -> Tuple[Dict[str, Tup
                         logger.debug(f"Incomplete data for ticker {ticker}: cik={cik}, name={name}")
                         failed_tickers.append(ticker)
                 else:
-                    logger.debug(f"Failed to lookup ticker {ticker}: {result.get('error', 'Unknown error')}")
+                    logger.debug(f"Failed to lookup ticker {ticker}: {result.get('error', 'Unknown error')}")  # type: ignore
                     failed_tickers.append(ticker)
             else:
                 logger.debug(f"No result for ticker {ticker}")
@@ -171,16 +178,16 @@ def process_tickers_and_persist_ciks(
         sync_result.failed_ticker_lookups.extend(batch_failed)
         
         # Group results by CIK (multiple tickers can map to same CIK)
-        cik_to_company_name = {}
-        for ticker, (cik, company_name) in batch_results.items():
+        cik_to_company_name: Dict[int, str] = {}
+        for _, (cik, company_name) in batch_results.items():
             if cik not in cik_to_company_name:
                 cik_to_company_name[cik] = company_name
             elif cik_to_company_name[cik] != company_name:
                 logger.debug(f"CIK {cik} has multiple company names: '{cik_to_company_name[cik]}' vs '{company_name}'")
         
         # Categorize CIKs and persist immediately
-        ciks_to_add = []
-        ciks_to_update = []
+        ciks_to_add: List[CikLookup] = []
+        ciks_to_update: List[CikLookup] = []
         
         for cik, company_name in cik_to_company_name.items():
             if cik in database_ciks:
@@ -251,7 +258,7 @@ def identify_ciks_to_delete(
     Returns:
         List of CIK numbers to delete from database
     """
-    ciks_to_delete = []
+    ciks_to_delete: List[int] = []
     
     for cik in database_ciks.keys():
         if cik not in processed_ciks:

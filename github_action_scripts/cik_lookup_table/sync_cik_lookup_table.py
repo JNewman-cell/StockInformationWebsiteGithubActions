@@ -12,7 +12,7 @@ to retrieve CIK and company name information. The script performs:
 import logging
 import os
 import sys
-from typing import Dict
+from typing import Dict, Set
 
 # Add data layer to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -193,7 +193,7 @@ Lookup and Persistence Results:
         
         # 4. Identify and delete CIKs that are no longer in source data
         logger.info("Identifying obsolete CIKs...")
-        processed_ciks = set()
+        processed_ciks: Set[int] = set()
         for cik_lookup in sync_result.to_add:
             processed_ciks.add(cik_lookup.cik)
         for cik_lookup in sync_result.to_update:
