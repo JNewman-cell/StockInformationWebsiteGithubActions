@@ -8,6 +8,3 @@ BATCH_SIZE = 50
 
 # Max concurrent workers for Yahoo Finance API requests
 MAX_WORKERS = 8
-
-# Environment variable name for SEC API user email (required by sec-company-lookup)
-SEC_USER_EMAIL_ENV_VAR = "SEC_API_USER_EMAIL"

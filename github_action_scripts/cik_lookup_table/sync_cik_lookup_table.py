@@ -20,7 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from data_layer import (
     DatabaseConnectionManager,
 )
-from data_layer.repositories import CikLookupRepository
+from data_layer.repositories import CikLookupRepository, TickerSummaryRepository
 from utils.utils import (
     fetch_ticker_data_from_github_repo,
     process_tickers_and_persist_ciks,
@@ -36,21 +36,6 @@ logger = logging.getLogger(__name__)
 # Suppress psycopg connection pool verbose logging that exposes connection strings
 logging.getLogger('psycopg.pool').setLevel(logging.ERROR)
 logging.getLogger('psycopg').setLevel(logging.ERROR)
-
-
-def configure_sec_company_lookup():
-    """Configure the sec-company-lookup package with user email."""
-    from sec_company_lookup import set_user_email
-    
-    # Try to get email from environment variable
-    user_email = 'jpnewman167@gmail.com'
-    
-    set_user_email(user_email)
-    logger.info(f"Configured sec-company-lookup with email: {user_email}")
-
-
-
-
 
 def check_database_connectivity(db_manager: DatabaseConnectionManager, cik_repo: CikLookupRepository) -> bool:
     """
@@ -139,20 +124,12 @@ Synchronization Results (with immediate persistence):
 
 def main():
     """Main function for CIK lookup table synchronization."""
-    
-    # Configure sec-company-lookup package
-    try:
-        logger.info("Configuring sec-company-lookup package...")
-        configure_sec_company_lookup()
-    except Exception as e:
-        logger.error(f"Failed to configure sec-company-lookup: {e}")
-        sys.exit(1)
-    
     # Initialize data layer components
     try:
         logger.info("Initializing data layer...")
         db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
         cik_repo = CikLookupRepository(db_manager)
+        ticker_summary_repo = TickerSummaryRepository(db_manager)
         
         # Check database connectivity and table structure
         if not check_database_connectivity(db_manager, cik_repo):
@@ -204,7 +181,7 @@ Lookup and Persistence Results:
         
         if ciks_to_delete:
             logger.info(f"Deleting {len(ciks_to_delete)} obsolete CIKs...")
-            deleted_count = delete_obsolete_ciks(cik_repo, ciks_to_delete)
+            deleted_count = delete_obsolete_ciks(cik_repo, ticker_summary_repo, ciks_to_delete)
             sync_result.to_delete = ciks_to_delete
         else:
             logger.info("No obsolete CIKs to delete")
