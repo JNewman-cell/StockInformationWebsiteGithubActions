@@ -18,7 +18,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 1  # Shallow clone for faster checkout
-        
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -32,10 +32,12 @@ jobs:
         # and can lead to missing executables (observed in CI). Instead rely
         # on pip caching (setup-python 'cache: pip') and create the venv each run.
         python -m venv .venv
+        # Use the venv's python to upgrade pip and install dependencies
         . .venv/bin/activate
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
-        source .venv/bin/activate
+        # Make the venv's bin directory available to all subsequent steps in this job
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
     - name: Synchronize CIK lookup database with new data
       env:
