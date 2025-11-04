@@ -200,6 +200,38 @@ class TickerSummary:
         dividend_yield = to_decimal(data.get('dividend_yield'), 'dividend_yield', required=False, clamp_ratio_to_null=True)
         payout_ratio = to_decimal(data.get('payout_ratio'), 'payout_ratio', required=False, clamp_ratio_to_null=True)
 
+        # Convert dividend_yield from fraction to percentage when appropriate.
+        # Many data sources return dividend_yield as a fraction (e.g., 0.02 for 2%).
+        # If the value is <= 1, assume it's a fraction and multiply by 100 so the DB stores a percent.
+        if dividend_yield is not None:
+            try:
+                if dividend_yield <= Decimal('1'):
+                    dividend_yield = dividend_yield * Decimal('100')
+                    # Re-run clamp check to ensure within DB range after scaling
+                    if dividend_yield < 0 or dividend_yield > Decimal('99.99'):
+                        logger.warning(f"dividend_yield after scaling out of range; setting to None: {dividend_yield}")
+                        dividend_yield = None
+            except Exception:
+                # If any comparison/conversion fails, set to None to be safe
+                logger.warning(f"Could not scale dividend_yield value; setting to None")
+                dividend_yield = None
+
+        # Convert payout_ratio from fraction to percentage when appropriate.
+        # Many data sources return payout_ratio as a fraction (e.g., 0.25 for 25%).
+        # If the value is <= 1, assume it's a fraction and multiply by 100 so the DB stores a percent.
+        if payout_ratio is not None:
+            try:
+                if payout_ratio <= Decimal('1'):
+                    payout_ratio = payout_ratio * Decimal('100')
+                    # Re-run clamp check to ensure within DB range after scaling
+                    if payout_ratio < 0 or payout_ratio > Decimal('99.99'):
+                        logger.warning(f"payout_ratio after scaling out of range; setting to None: {payout_ratio}")
+                        payout_ratio = None
+            except Exception:
+                # If any comparison/conversion fails, set to None to be safe
+                logger.warning(f"Could not scale payout_ratio value; setting to None")
+                payout_ratio = None
+
         return cls(
             ticker=data['ticker'],
             cik=data.get('cik'),
