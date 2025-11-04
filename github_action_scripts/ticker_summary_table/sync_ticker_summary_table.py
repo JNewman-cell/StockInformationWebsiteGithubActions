@@ -32,7 +32,6 @@ from utils.utils import (
     delete_obsolete_ticker_summaries,
 )
 from entities.synchronization_result import SynchronizationResult
-from constants import SEC_USER_EMAIL_ENV_VAR
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,20 +40,6 @@ logger = logging.getLogger(__name__)
 # Suppress psycopg connection pool verbose logging that exposes connection strings
 logging.getLogger('psycopg.pool').setLevel(logging.ERROR)
 logging.getLogger('psycopg').setLevel(logging.ERROR)
-
-
-def configure_sec_api():
-    """Configure the sec-company-lookup package with user email."""
-    from sec_company_lookup import set_user_email
-    
-    user_email = os.getenv(SEC_USER_EMAIL_ENV_VAR)
-    if not user_email:
-        raise ValueError(f"Environment variable {SEC_USER_EMAIL_ENV_VAR} is not set. "
-                        f"This is required for SEC API access.")
-    
-    set_user_email(user_email)
-    logger.info(f"Configured sec-company-lookup with email: {user_email}")
-
 
 def check_database_connectivity(db_manager: DatabaseConnectionManager, ticker_summary_repo: TickerSummaryRepository) -> bool:
     """
@@ -151,16 +136,7 @@ Synchronization Results (with immediate persistence):
 
 
 def main():
-    """Main function for ticker summary table synchronization."""
-    
-    # Configure sec-company-lookup package
-    try:
-        logger.info("Configuring sec-company-lookup package...")
-        configure_sec_api()
-    except Exception as e:
-        logger.error(f"Failed to configure sec-company-lookup: {e}")
-        sys.exit(1)
-    
+    """Main function for ticker summary table synchronization.""" 
     # Initialize data layer components
     try:
         logger.info("Initializing data layer...")

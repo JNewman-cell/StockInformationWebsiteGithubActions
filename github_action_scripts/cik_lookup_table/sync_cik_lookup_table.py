@@ -37,16 +37,6 @@ logger = logging.getLogger(__name__)
 logging.getLogger('psycopg.pool').setLevel(logging.ERROR)
 logging.getLogger('psycopg').setLevel(logging.ERROR)
 
-def configure_sec_company_lookup():
-    """Configure the sec-company-lookup package with user email."""
-    from sec_company_lookup import set_user_email
-    
-    # Try to get email from environment variable
-    user_email = 'jpnewman167@gmail.com'
-    
-    set_user_email(user_email)
-    logger.info(f"Configured sec-company-lookup with email: {user_email}")
-
 def check_database_connectivity(db_manager: DatabaseConnectionManager, cik_repo: CikLookupRepository) -> bool:
     """
     Check database connectivity and table structure using data layer.
@@ -134,15 +124,6 @@ Synchronization Results (with immediate persistence):
 
 def main():
     """Main function for CIK lookup table synchronization."""
-    
-    # Configure sec-company-lookup package
-    try:
-        logger.info("Configuring sec-company-lookup package...")
-        configure_sec_company_lookup()
-    except Exception as e:
-        logger.error(f"Failed to configure sec-company-lookup: {e}")
-        sys.exit(1)
-    
     # Initialize data layer components
     try:
         logger.info("Initializing data layer...")
