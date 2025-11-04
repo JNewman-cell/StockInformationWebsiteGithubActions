@@ -455,6 +455,36 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         except Exception as e:
             raise DatabaseQueryError("bulk delete ticker summaries", str(e))
     
+    def bulk_delete_by_cik(self, ciks: List[int]) -> int:
+        """
+        Delete multiple ticker summary entries by CIK in a single transaction.
+        
+        Args:
+            ciks: List of CIK values to delete ticker summaries for
+        
+        Returns:
+            Number of rows successfully deleted
+        
+        Raises:
+            DatabaseQueryError: If database operation fails
+        """
+        if not ciks:
+            return 0
+        
+        # Create placeholders for the IN clause
+        placeholders = ','.join(['%s'] * len(ciks))
+        delete_query = f"DELETE FROM ticker_summary WHERE cik IN ({placeholders});"
+        
+        try:
+            with self.db_manager.get_cursor_context() as cursor:
+                cursor.execute(delete_query, ciks)  # type: ignore[arg-type]
+                rows_deleted = cursor.rowcount
+                self.logger.info(f"Successfully bulk deleted {rows_deleted} ticker summaries by CIK")
+                return rows_deleted
+
+        except Exception as e:
+            raise DatabaseQueryError("bulk delete ticker summaries by CIK", str(e))
+    
     # ============================================================================
     # HELPER METHODS
     # ============================================================================

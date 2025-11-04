@@ -14,11 +14,6 @@ jobs:
       cancel-in-progress: true
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1  # Shallow clone for faster checkout
-
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -35,10 +30,18 @@ jobs:
         . .venv/bin/activate
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
+        source .venv/bin/activate
 
-    - name: Synchronize CIK lookup database with deterministic approach
+    - name: Synchronize CIK lookup database with new data
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
       run: |
-        source .venv/bin/activate
         python github_action_scripts/cik_lookup_table/sync_cik_lookup_table.py
+
+    - name: Synchronize ticker summary database with deterministic approach
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
+      run: |
+        python github_action_scripts/ticker_summary_table/sync_ticker_summary_table.py
