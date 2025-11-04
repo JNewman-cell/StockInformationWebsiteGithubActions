@@ -4,9 +4,12 @@ Ticker summary model representing stock summary information.
 
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import logging
 
 from ..exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -124,23 +127,99 @@ class TickerSummary:
         Returns:
             TickerSummary instance
         """
-        # Convert numeric fields to appropriate types
-        def to_decimal(value: Any) -> Optional[Decimal]:
+        # Helper to convert to Decimal safely and enforce finite values
+        def to_decimal(value: Any, field_name: str, required: bool = False,
+                       allow_negative: bool = False,
+                       clamp_ratio_to_null: bool = False) -> Optional[Decimal]:
             if value is None:
                 return None
-            return Decimal(str(value))
-        
+
+            # Accept already-Decimal values
+            try:
+                dec = value if isinstance(value, Decimal) else Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError) as e:
+                logger.warning(f"Invalid numeric value for {field_name}: {value} ({e})")
+                if required:
+                    raise ValidationError(field_name, value, f"Invalid numeric value: {e}")
+                return None
+
+            # Reject non-finite values (Infinity, NaN)
+            try:
+                if not dec.is_finite():
+                    logger.warning(f"Non-finite value for {field_name}: {value}")
+                    if required:
+                        raise ValidationError(field_name, value, "Value must be finite")
+                    return None
+            except Exception:
+                # Decimal may not have is_finite in some edge cases; be conservative
+                logger.warning(f"Could not determine finiteness for {field_name}: {value}")
+
+            # Enforce non-negative when requested
+            if not allow_negative and dec < 0:
+                logger.warning(f"Negative value for {field_name} coerced to None: {dec}")
+                if required:
+                    raise ValidationError(field_name, dec, f"{field_name} cannot be negative")
+                return None
+
+            # For ratio fields (dividend_yield, payout_ratio) clamp out-of-range to None
+            # Schema uses NUMERIC(4,2) which supports up to 99.99, so allow 0..99.99
+            if clamp_ratio_to_null:
+                max_ratio = Decimal('99.99')
+                if dec < 0 or dec > max_ratio:
+                    logger.warning(f"{field_name} out of expected range 0..{max_ratio}; setting to None: {dec}")
+                    return None
+
+            return dec
+
+        # Helper to convert market_cap to int safely
+        def to_int(value: Any, field_name: str, required: bool = False) -> int:
+            if value is None:
+                if required:
+                    raise ValidationError(field_name, value, f"{field_name} is required")
+                return 0
+            try:
+                # market_cap may be float/str; convert via Decimal to avoid float precision
+                dec = Decimal(str(value)) if not isinstance(value, int) else Decimal(value)
+                if not dec.is_finite():
+                    raise ValidationError(field_name, value, "Value must be finite")
+                integer = int(dec)
+            except (InvalidOperation, ValueError, TypeError) as e:
+                raise ValidationError(field_name, value, f"Invalid integer value: {e}")
+            if integer < 0:
+                raise ValidationError(field_name, integer, f"{field_name} cannot be negative")
+            return integer
+
+        # Build sanitized fields
+        market_cap = to_int(data.get('market_cap'), 'market_cap', required=True)
+        previous_close = to_decimal(data.get('previous_close'), 'previous_close', required=True)
+        fifty_day_average = to_decimal(data.get('fifty_day_average'), 'fifty_day_average', required=True)
+        two_hundred_day_average = to_decimal(data.get('two_hundred_day_average'), 'two_hundred_day_average', required=True)
+
+        # Static-type friendly checks: required fields must be present and finite
+        if previous_close is None:
+            raise ValidationError('previous_close', data.get('previous_close'), 'previous_close is required and must be finite')
+        if fifty_day_average is None:
+            raise ValidationError('fifty_day_average', data.get('fifty_day_average'), 'fifty_day_average is required and must be finite')
+        if two_hundred_day_average is None:
+            raise ValidationError('two_hundred_day_average', data.get('two_hundred_day_average'), 'two_hundred_day_average is required and must be finite')
+
+        pe_ratio = to_decimal(data.get('pe_ratio'), 'pe_ratio', required=False, allow_negative=False)
+        forward_pe_ratio = to_decimal(data.get('forward_pe_ratio'), 'forward_pe_ratio', required=False, allow_negative=False)
+        # dividend_yield and payout_ratio are stored with precision/scale constrained in DB
+        dividend_yield = to_decimal(data.get('dividend_yield'), 'dividend_yield', required=False, clamp_ratio_to_null=True)
+        payout_ratio = to_decimal(data.get('payout_ratio'), 'payout_ratio', required=False, clamp_ratio_to_null=True)
+
         return cls(
             ticker=data['ticker'],
             cik=data.get('cik'),
-            market_cap=data['market_cap'],
-            previous_close=Decimal(str(data['previous_close'])),
-            pe_ratio=to_decimal(data.get('pe_ratio')),
-            forward_pe_ratio=to_decimal(data.get('forward_pe_ratio')),
-            dividend_yield=to_decimal(data.get('dividend_yield')),
-            payout_ratio=to_decimal(data.get('payout_ratio')),
-            fifty_day_average=Decimal(str(data['fifty_day_average'])),
-            two_hundred_day_average=Decimal(str(data['two_hundred_day_average']))
+            market_cap=market_cap,
+            previous_close=previous_close,
+            pe_ratio=pe_ratio,
+            forward_pe_ratio=forward_pe_ratio,
+            dividend_yield=dividend_yield,
+            payout_ratio=payout_ratio,
+            fifty_day_average=fifty_day_average,
+            two_hundred_day_average=two_hundred_day_average
         )
     
     def __repr__(self) -> str:

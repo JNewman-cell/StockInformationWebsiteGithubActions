@@ -3,13 +3,13 @@ CREATE TABLE ticker_summary (
     ticker VARCHAR(7) PRIMARY KEY,
     cik INTEGER,
     market_cap BIGINT NOT NULL,
-    previous_close NUMERIC(7,2) NOT NULL,
-    pe_ratio NUMERIC(7,2),
-    forward_pe_ratio NUMERIC(7,2),
-    dividend_yield NUMERIC(2,2),
-    payout_ratio NUMERIC(2,2),
-    fifty_day_average NUMERIC(7,2) NOT NULL,
-    two_hundred_day_average NUMERIC(7,2) NOT NULL,
+    previous_close NUMERIC(9,2) NOT NULL,
+    pe_ratio NUMERIC(9,2),
+    forward_pe_ratio NUMERIC(9,2),
+    dividend_yield NUMERIC(4,2),
+    payout_ratio NUMERIC(4,2),
+    fifty_day_average NUMERIC(9,2) NOT NULL,
+    two_hundred_day_average NUMERIC(9,2) NOT NULL,
     FOREIGN KEY (cik) REFERENCES cik_lookup(cik)
 );
 
