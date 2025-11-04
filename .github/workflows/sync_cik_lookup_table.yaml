@@ -9,9 +9,6 @@ jobs:
   update-cik-lookup-database:
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
 
     steps:
     - name: Checkout code
@@ -49,6 +46,9 @@ jobs:
   update-ticker-summary-database:
     needs: update-cik-lookup-database
     runs-on: ubuntu-latest
+    environment: "GitHub Actions Secrets"
+
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
