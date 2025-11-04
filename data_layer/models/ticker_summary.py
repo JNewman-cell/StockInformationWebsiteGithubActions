@@ -72,13 +72,9 @@ class TickerSummary:
         if self.previous_close < 0:
             raise ValidationError("previous_close", self.previous_close, "Previous close cannot be negative")
         
-        # Validate pe_ratio if provided
-        if self.pe_ratio is not None and self.pe_ratio < 0:
-            raise ValidationError("pe_ratio", self.pe_ratio, "PE ratio cannot be negative")
-        
-        # Validate forward_pe_ratio if provided
-        if self.forward_pe_ratio is not None and self.forward_pe_ratio < 0:
-            raise ValidationError("forward_pe_ratio", self.forward_pe_ratio, "Forward PE ratio cannot be negative")
+        # PE ratios may be negative (companies with negative earnings).
+        # No validation to forbid negative pe_ratio/forward_pe_ratio here.
+        # If you want to enforce a range, update this method accordingly.
         
         # Validate dividend_yield if provided (NUMERIC(4,2) allows 0..99.99)
         if self.dividend_yield is not None and (self.dividend_yield < 0 or self.dividend_yield > Decimal('99.99')):
@@ -129,7 +125,6 @@ class TickerSummary:
         """
         # Helper to convert to Decimal safely and enforce finite values
         def to_decimal(value: Any, field_name: str, required: bool = False,
-                       allow_negative: bool = False,
                        clamp_ratio_to_null: bool = False) -> Optional[Decimal]:
             if value is None:
                 return None
@@ -154,13 +149,7 @@ class TickerSummary:
                 # Decimal may not have is_finite in some edge cases; be conservative
                 logger.warning(f"Could not determine finiteness for {field_name}: {value}")
 
-            # Enforce non-negative when requested
-            if not allow_negative and dec < 0:
-                logger.warning(f"Negative value for {field_name} coerced to None: {dec}")
-                if required:
-                    raise ValidationError(field_name, dec, f"{field_name} cannot be negative")
-                return None
-
+            # Note: negative values are allowed for fields like PE ratios.
             # For ratio fields (dividend_yield, payout_ratio) clamp out-of-range to None
             # Schema uses NUMERIC(4,2) which supports up to 99.99, so allow 0..99.99
             if clamp_ratio_to_null:
@@ -203,8 +192,10 @@ class TickerSummary:
         if two_hundred_day_average is None:
             raise ValidationError('two_hundred_day_average', data.get('two_hundred_day_average'), 'two_hundred_day_average is required and must be finite')
 
-        pe_ratio = to_decimal(data.get('pe_ratio'), 'pe_ratio', required=False, allow_negative=False)
-        forward_pe_ratio = to_decimal(data.get('forward_pe_ratio'), 'forward_pe_ratio', required=False, allow_negative=False)
+        # PE ratios may be negative; preserve negative values
+        pe_ratio = to_decimal(data.get('pe_ratio'), 'pe_ratio', required=False)
+        forward_pe_ratio = to_decimal(data.get('forward_pe_ratio'), 'forward_pe_ratio', required=False)
+
         # dividend_yield and payout_ratio are stored with precision/scale constrained in DB
         dividend_yield = to_decimal(data.get('dividend_yield'), 'dividend_yield', required=False, clamp_ratio_to_null=True)
         payout_ratio = to_decimal(data.get('payout_ratio'), 'payout_ratio', required=False, clamp_ratio_to_null=True)
