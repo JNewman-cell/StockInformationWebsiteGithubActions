@@ -80,13 +80,13 @@ class TickerSummary:
         if self.forward_pe_ratio is not None and self.forward_pe_ratio < 0:
             raise ValidationError("forward_pe_ratio", self.forward_pe_ratio, "Forward PE ratio cannot be negative")
         
-        # Validate dividend_yield if provided
-        if self.dividend_yield is not None and (self.dividend_yield < 0 or self.dividend_yield > 1):
-            raise ValidationError("dividend_yield", self.dividend_yield, "Dividend yield must be between 0 and 1")
+        # Validate dividend_yield if provided (NUMERIC(4,2) allows 0..99.99)
+        if self.dividend_yield is not None and (self.dividend_yield < 0 or self.dividend_yield > Decimal('99.99')):
+            raise ValidationError("dividend_yield", self.dividend_yield, "Dividend yield must be between 0 and 99.99")
         
-        # Validate payout_ratio if provided
-        if self.payout_ratio is not None and (self.payout_ratio < 0 or self.payout_ratio > 1):
-            raise ValidationError("payout_ratio", self.payout_ratio, "Payout ratio must be between 0 and 1")
+        # Validate payout_ratio if provided (NUMERIC(4,2) allows 0..99.99)
+        if self.payout_ratio is not None and (self.payout_ratio < 0 or self.payout_ratio > Decimal('99.99')):
+            raise ValidationError("payout_ratio", self.payout_ratio, "Payout ratio must be between 0 and 99.99")
         
         # Validate fifty_day_average
         if self.fifty_day_average < 0:

@@ -355,19 +355,13 @@ def process_tickers_and_persist_summaries(
                 # Get CIK for this ticker (we know it exists from batch_ciks)
                 cik = batch_ciks.get(ticker)
                 
-                # Create TickerSummary object with CIK from SEC lookup
-                new_summary = TickerSummary(
-                    ticker=ticker,
-                    cik=cik,
-                    market_cap=market_cap,
-                    previous_close=Decimal(str(previous_close)),
-                    pe_ratio=Decimal(str(data['pe_ratio'])) if data['pe_ratio'] is not None else None,
-                    forward_pe_ratio=Decimal(str(data['forward_pe_ratio'])) if data['forward_pe_ratio'] is not None else None,
-                    dividend_yield=Decimal(str(data['dividend_yield'])) if data['dividend_yield'] is not None else None,
-                    payout_ratio=Decimal(str(data['payout_ratio'])) if data['payout_ratio'] is not None else None,
-                    fifty_day_average=Decimal(str(data['fifty_day_average'])),
-                    two_hundred_day_average=Decimal(str(data['two_hundred_day_average']))
-                )
+                # Add CIK to data dict and create TickerSummary using from_dict for proper sanitization
+                data['cik'] = cik
+                data['ticker'] = ticker
+                
+                # Use from_dict to create TickerSummary with proper sanitization
+                # This will handle infinite/NaN values, out-of-range ratios, etc.
+                new_summary = TickerSummary.from_dict(data)
                 
                 if ticker in database_ticker_summaries:
                     # Ticker exists - check if data changed
