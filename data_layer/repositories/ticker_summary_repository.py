@@ -81,27 +81,26 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         """
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        insert_query,
-                        (
-                            ticker_summary.ticker,
-                            ticker_summary.cik,
-                            ticker_summary.market_cap,
-                            ticker_summary.previous_close,
-                            ticker_summary.pe_ratio,
-                            ticker_summary.forward_pe_ratio,
-                            ticker_summary.dividend_yield,
-                            ticker_summary.payout_ratio,
-                            ticker_summary.fifty_day_average,
-                            ticker_summary.two_hundred_day_average
-                        )
+            # Use connection manager cursor context to ensure connection is returned to the pool
+            with self.db_manager.get_cursor_context() as cursor:
+                cursor.execute(
+                    insert_query,
+                    (
+                        ticker_summary.ticker,
+                        ticker_summary.cik,
+                        ticker_summary.market_cap,
+                        ticker_summary.previous_close,
+                        ticker_summary.pe_ratio,
+                        ticker_summary.forward_pe_ratio,
+                        ticker_summary.dividend_yield,
+                        ticker_summary.payout_ratio,
+                        ticker_summary.fifty_day_average,
+                        ticker_summary.two_hundred_day_average
                     )
-                    conn.commit()
-                    self.logger.info(f"Successfully inserted ticker summary: {ticker_summary.ticker}")
-                    return ticker_summary
-                
+                )
+                self.logger.info(f"Successfully inserted ticker summary: {ticker_summary.ticker}")
+                return ticker_summary
+
         except psycopg.errors.UniqueViolation:
             raise DuplicateTickerError(ticker_summary.ticker)
         except Exception as e:
@@ -135,29 +134,28 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         """
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    data = [
-                        (
-                            ts.ticker,
-                            ts.cik,
-                            ts.market_cap,
-                            ts.previous_close,
-                            ts.pe_ratio,
-                            ts.forward_pe_ratio,
-                            ts.dividend_yield,
-                            ts.payout_ratio,
-                            ts.fifty_day_average,
-                            ts.two_hundred_day_average
-                        )
-                        for ts in entities
-                    ]
-                    cursor.executemany(insert_query, data)
-                    rows_inserted = cursor.rowcount
-                    conn.commit()
-                    self.logger.info(f"Successfully bulk inserted {rows_inserted} ticker summaries")
-                    return rows_inserted
-                
+            # Use cursor context which returns connections to the pool automatically
+            with self.db_manager.get_cursor_context() as cursor:
+                data = [
+                    (
+                        ts.ticker,
+                        ts.cik,
+                        ts.market_cap,
+                        ts.previous_close,
+                        ts.pe_ratio,
+                        ts.forward_pe_ratio,
+                        ts.dividend_yield,
+                        ts.payout_ratio,
+                        ts.fifty_day_average,
+                        ts.two_hundred_day_average
+                    )
+                    for ts in entities
+                ]
+                cursor.executemany(insert_query, data)
+                rows_inserted = cursor.rowcount
+                self.logger.info(f"Successfully bulk inserted {rows_inserted} ticker summaries")
+                return rows_inserted
+
         except Exception as e:
             raise DatabaseQueryError("bulk insert ticker summaries", str(e))
     
@@ -187,16 +185,15 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         """
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(select_query, (ticker.upper(),))
-                    row = cursor.fetchone()
-                    
-                    if row is None:
-                        return None
-                    
-                    return self._row_to_entity(row)
-                
+            with self.db_manager.get_cursor_context(commit=False) as cursor:
+                cursor.execute(select_query, (ticker.upper(),))
+                row = cursor.fetchone()
+
+                if row is None:
+                    return None
+
+                return self._row_to_entity(row)
+
         except Exception as e:
             raise DatabaseQueryError("get ticker summary by ticker", str(e))
     
@@ -234,13 +231,12 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         query = "".join(query_parts) + ";"
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(query, params)  # type: ignore[arg-type]
-                    rows = cursor.fetchall()
-                    
-                    return [self._row_to_entity(row) for row in rows]
-                
+            with self.db_manager.get_cursor_context(commit=False) as cursor:
+                cursor.execute(query, params)  # type: ignore[arg-type]
+                rows = cursor.fetchall()
+
+                return [self._row_to_entity(row) for row in rows]
+
         except Exception as e:
             raise DatabaseQueryError("get all ticker summaries", str(e))
     
@@ -257,12 +253,11 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         count_query = "SELECT COUNT(*) FROM ticker_summary;"
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(count_query)
-                    result = cursor.fetchone()
-                    return result[0] if result else 0
-                
+            with self.db_manager.get_cursor_context(commit=False) as cursor:
+                cursor.execute(count_query)
+                result = cursor.fetchone()
+                return result[0] if result else 0
+
         except Exception as e:
             raise DatabaseQueryError("count ticker summaries", str(e))
     
@@ -282,11 +277,10 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         query = "SELECT 1 FROM ticker_summary WHERE ticker = %s LIMIT 1;"
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(query, (ticker.upper(),))
-                    return cursor.fetchone() is not None
-                
+            with self.db_manager.get_cursor_context(commit=False) as cursor:
+                cursor.execute(query, (ticker.upper(),))
+                return cursor.fetchone() is not None
+
         except Exception as e:
             raise DatabaseQueryError("check ticker existence", str(e))
     
@@ -324,27 +318,25 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         """
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        update_query,
-                        (
-                            ticker_summary.cik,
-                            ticker_summary.market_cap,
-                            ticker_summary.previous_close,
-                            ticker_summary.pe_ratio,
-                            ticker_summary.forward_pe_ratio,
-                            ticker_summary.dividend_yield,
-                            ticker_summary.payout_ratio,
-                            ticker_summary.fifty_day_average,
-                            ticker_summary.two_hundred_day_average,
-                            ticker_summary.ticker
-                        )
+            with self.db_manager.get_cursor_context() as cursor:
+                cursor.execute(
+                    update_query,
+                    (
+                        ticker_summary.cik,
+                        ticker_summary.market_cap,
+                        ticker_summary.previous_close,
+                        ticker_summary.pe_ratio,
+                        ticker_summary.forward_pe_ratio,
+                        ticker_summary.dividend_yield,
+                        ticker_summary.payout_ratio,
+                        ticker_summary.fifty_day_average,
+                        ticker_summary.two_hundred_day_average,
+                        ticker_summary.ticker
                     )
-                    conn.commit()
-                    self.logger.info(f"Successfully updated ticker summary: {ticker_summary.ticker}")
-                    return ticker_summary
-                
+                )
+                self.logger.info(f"Successfully updated ticker summary: {ticker_summary.ticker}")
+                return ticker_summary
+
         except Exception as e:
             raise DatabaseQueryError("update ticker summary", str(e))
     
@@ -373,29 +365,27 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         """
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    data = [
-                        (
-                            ts.cik,
-                            ts.market_cap,
-                            ts.previous_close,
-                            ts.pe_ratio,
-                            ts.forward_pe_ratio,
-                            ts.dividend_yield,
-                            ts.payout_ratio,
-                            ts.fifty_day_average,
-                            ts.two_hundred_day_average,
-                            ts.ticker
-                        )
-                        for ts in entities
-                    ]
-                    cursor.executemany(update_query, data)
-                    rows_updated = cursor.rowcount
-                    conn.commit()
-                    self.logger.info(f"Successfully bulk updated {rows_updated} ticker summaries")
-                    return rows_updated
-                
+            with self.db_manager.get_cursor_context() as cursor:
+                data = [
+                    (
+                        ts.cik,
+                        ts.market_cap,
+                        ts.previous_close,
+                        ts.pe_ratio,
+                        ts.forward_pe_ratio,
+                        ts.dividend_yield,
+                        ts.payout_ratio,
+                        ts.fifty_day_average,
+                        ts.two_hundred_day_average,
+                        ts.ticker
+                    )
+                    for ts in entities
+                ]
+                cursor.executemany(update_query, data)
+                rows_updated = cursor.rowcount
+                self.logger.info(f"Successfully bulk updated {rows_updated} ticker summaries")
+                return rows_updated
+
         except Exception as e:
             raise DatabaseQueryError("bulk update ticker summaries", str(e))
     
@@ -419,19 +409,17 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         delete_query = "DELETE FROM ticker_summary WHERE ticker = %s;"
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(delete_query, (entity_id.upper(),))
-                    rows_deleted = cursor.rowcount
-                    conn.commit()
-                    
-                    if rows_deleted > 0:
-                        self.logger.info(f"Successfully deleted ticker summary: {entity_id}")
-                        return True
-                    else:
-                        self.logger.warning(f"Ticker summary not found for deletion: {entity_id}")
-                        return False
-                
+            with self.db_manager.get_cursor_context() as cursor:
+                cursor.execute(delete_query, (entity_id.upper(),))
+                rows_deleted = cursor.rowcount
+
+                if rows_deleted > 0:
+                    self.logger.info(f"Successfully deleted ticker summary: {entity_id}")
+                    return True
+                else:
+                    self.logger.warning(f"Ticker summary not found for deletion: {entity_id}")
+                    return False
+
         except Exception as e:
             raise DatabaseQueryError("delete ticker summary", str(e))
     
@@ -456,16 +444,14 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         delete_query = f"DELETE FROM ticker_summary WHERE ticker IN ({placeholders});"
         
         try:
-            with self.db_manager.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    # Convert all tickers to uppercase
-                    upper_tickers = [ticker.upper() for ticker in entity_ids]
-                    cursor.execute(delete_query, upper_tickers)  # type: ignore[arg-type]
-                    rows_deleted = cursor.rowcount
-                    conn.commit()
-                    self.logger.info(f"Successfully bulk deleted {rows_deleted} ticker summaries")
-                    return rows_deleted
-                
+            with self.db_manager.get_cursor_context() as cursor:
+                # Convert all tickers to uppercase
+                upper_tickers = [ticker.upper() for ticker in entity_ids]
+                cursor.execute(delete_query, upper_tickers)  # type: ignore[arg-type]
+                rows_deleted = cursor.rowcount
+                self.logger.info(f"Successfully bulk deleted {rows_deleted} ticker summaries")
+                return rows_deleted
+
         except Exception as e:
             raise DatabaseQueryError("bulk delete ticker summaries", str(e))
     
