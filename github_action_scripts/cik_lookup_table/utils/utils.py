@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple, Set, cast
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from data_layer.models import CikLookup
-from data_layer.repositories import CikLookupRepository
+from data_layer.repositories import CikLookupRepository, TickerSummaryRepository
 
 # Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -399,13 +399,17 @@ def identify_ciks_to_delete(
 
 def delete_obsolete_ciks(
     cik_repo: CikLookupRepository,
+    ticker_summary_repo: TickerSummaryRepository,
     ciks_to_delete: List[int]
 ) -> int:
     """
     Delete CIKs from database that are no longer in source data.
+    First deletes from ticker_summary table to avoid foreign key constraint violations,
+    then deletes from cik_lookup table.
     
     Args:
         cik_repo: CIK lookup repository for database operations
+        ticker_summary_repo: Ticker summary repository for database operations
         ciks_to_delete: List of CIK numbers to delete
         
     Returns:
@@ -425,6 +429,11 @@ def delete_obsolete_ciks(
         batch_num = (i // BATCH_SIZE) + 1
         
         try:
+            # First delete from ticker_summary table to avoid foreign key constraint
+            ticker_summary_deleted = ticker_summary_repo.bulk_delete_by_cik(batch)
+            logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {ticker_summary_deleted} ticker summaries")
+            
+            # Then delete from cik_lookup table
             deleted_count = cik_repo.bulk_delete(batch)
             total_deleted += deleted_count
             logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {deleted_count}/{len(batch)} CIKs")
