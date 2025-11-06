@@ -4,6 +4,7 @@ Utility functions for CIK lookup table synchronization.
 
 import logging
 import os
+import re
 import sys
 from typing import Dict, List, Tuple, Set, cast
 
@@ -19,6 +20,124 @@ from entities.synchronization_result import SynchronizationResult
 from constants import BATCH_SIZE
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_company_name(name: str) -> str:
+    """
+    Normalize company name by:
+    1. Removing commas before corporate suffixes
+    2. Standardizing suffix formats to include periods
+    
+    Args:
+        name: Original company name
+        
+    Returns:
+        Normalized company name
+    """
+    suffix_patterns = [
+        # With comma patterns (need to remove comma)
+        (r',\s*INC\.?', ' Inc.'),
+        (r',\s*INCORPORATED', ' Inc.'),
+        (r',\s*CORP\.?', ' Corp.'),
+        (r',\s*CORPORATION', ' Corp.'),
+        (r',\s*LLC\.?', ' LLC'),
+        (r',\s*L\.L\.C\.?', ' LLC'),
+        (r',\s*LTD\.?', ' Ltd.'),
+        (r',\s*LIMITED', ' Ltd.'),
+        (r',\s*L\.P\.?', ' L.P.'),
+        (r',\s*LP\.?', ' L.P.'),
+        (r',\s*CO\.?', ' Co.'),
+        (r',\s*COMPANY', ' Co.'),
+        (r',\s*PLC\.?', ' PLC'),
+        (r',\s*N\.V\.?', ' N.V.'),
+        (r',\s*S\.A\.?', ' S.A.'),
+        (r',\s*AG\.?', ' AG'),
+        (r',\s*GMBH\.?', ' GmbH'),
+        
+        # Without comma patterns (just standardize format)
+        (r'\bINC\b(?!\.)', ' Inc.'),
+        (r'\bINCORPORATED\b', ' Inc.'),
+        (r'\bCORP\b(?!\.)', ' Corp.'),
+        (r'\bCORPORATION\b', ' Corp.'),
+        (r'\bLLC\b(?!\.)', ' LLC'),
+        (r'\bL\.L\.C\b(?!\.)', ' LLC'),
+        (r'\bLTD\b(?!\.)', ' Ltd.'),
+        (r'\bLIMITED\b', ' Ltd.'),
+        (r'\bL\.P\b(?!\.)', ' L.P.'),
+        (r'\bLP\b(?!\.)', ' L.P.'),
+        (r'\bCO\b(?!\.)', ' Co.'),
+        (r'\bCOMPANY\b', ' Co.'),
+        (r'\bPLC\b(?!\.)', ' PLC'),
+        (r'\bN\.V\b(?!\.)', ' N.V.'),
+        (r'\bS\.A\b(?!\.)', ' S.A.'),
+        (r'\bAG\b(?!\.)', ' AG'),
+        (r'\bGMBH\b(?!\.)', ' GmbH'),
+    ]
+    
+    normalized = name
+    for pattern, replacement in suffix_patterns:
+        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+    
+    normalized = re.sub(r'\s+', ' ', normalized)
+    return normalized.strip()
+
+
+def clean_company_name(name: str) -> str:
+    """
+    Clean company name by removing parenthetical information and trailing slashes.
+    
+    Removes:
+    1. Parentheses with content (regions, jurisdictions, stock exchanges, etc.)
+    2. Forward slashes with trailing content (jurisdiction codes)
+    
+    Preserves:
+    - Slashes that are part of company names (A/S, SA/NV, I/O, Long/Short, etc.)
+    
+    Args:
+        name: Original company name
+        
+    Returns:
+        Cleaned company name
+    """
+    # Remove parentheses with any content inside
+    name = re.sub(r'\s*\([^)]*\)', '', name)
+    
+    # Identify company type designations that use slashes and should be kept
+    company_types = ['A/S', 'SA/NV', 'I/O', 'Long/Short']
+    has_company_type_at_end = any(name.endswith(ct) for ct in company_types)
+    
+    # Remove space + slash + jurisdiction code patterns
+    name = re.sub(r'\s+/\s*[A-Z]{2,}/?$', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s+/\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*$', '', name)
+    
+    # Remove no-space slash + jurisdiction (if not a company type)
+    if not has_company_type_at_end:
+        name = re.sub(r'/[A-Z]{2,}(?:\s+[A-Z][a-z]+)*/?$', '', name)
+        name = re.sub(r'/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*$', '', name)
+        name = re.sub(r'/[A-Za-z]{2,}$', '', name)
+    
+    # Remove trailing slash
+    if name.endswith('/') and not any(ct in name for ct in company_types):
+        name = name.rstrip('/')
+    
+    # Clean up whitespace
+    return ' '.join(name.split())
+
+
+def process_company_name(name: str) -> str:
+    """
+    Apply both normalization and cleaning in sequence.
+    Order matters: normalize first, then clean.
+    
+    Args:
+        name: Original company name
+        
+    Returns:
+        Processed company name
+    """
+    normalized = normalize_company_name(name)
+    cleaned = clean_company_name(normalized)
+    return cleaned
 
 
 def fetch_ticker_data_from_github_repo() -> List[str]:
@@ -123,7 +242,15 @@ def lookup_cik_and_company_name_batch(tickers: List[str]) -> Tuple[Dict[str, Tup
                     name = company_data.get('name')  # type: ignore
                     
                     if cik is not None and name:
-                        results[ticker] = (cik, name)
+                        # Apply normalization and cleaning to company name
+                        # Cast/convert name to string. Ignore static type-checkers here.
+                        name_str = str(name)  # type: ignore
+                        processed_name = process_company_name(name_str)
+                        results[ticker] = (cik, processed_name)
+
+                        # Log if name was modified
+                        if processed_name != name_str:
+                            logger.debug(f"Processed company name for {ticker}: '{name_str}' -> '{processed_name}'")
                     else:
                         logger.debug(f"Incomplete data for ticker {ticker}: cik={cik}, name={name}")
                         failed_tickers.append(ticker)
