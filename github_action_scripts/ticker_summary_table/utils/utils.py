@@ -8,7 +8,6 @@ import sys
 import time
 import requests
 from typing import Dict, List, Set, Tuple, Optional, Any
-from decimal import Decimal
 import yahooquery as yq  # type: ignore
 
 # Add data layer to path for imports
@@ -227,7 +226,7 @@ def _fetch_yahoo_summary_data_with_retry(
     )
     
     # Get data from multiple endpoints
-    summary_data: Dict[str, Any] = stock.summary_detail  # type: ignore
+    summary_data: Dict[str, Any] = stock.summary_detail  # type: ignore[assignment]
     
     # Get invalid symbols
     invalid_symbols: List[str] = []
@@ -236,7 +235,7 @@ def _fetch_yahoo_summary_data_with_retry(
         if attempt == 1:  # Only log on first attempt
             logger.warning(f"Invalid symbols found: {invalid_symbols}")
     
-    return summary_data, invalid_symbols
+    return summary_data, invalid_symbols  # type: ignore[return-value]
 
 
 def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
