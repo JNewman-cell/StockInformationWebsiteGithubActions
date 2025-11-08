@@ -6,8 +6,8 @@ CREATE TABLE ticker_summary (
     previous_close NUMERIC(9,2) NOT NULL,
     pe_ratio NUMERIC(9,2),
     forward_pe_ratio NUMERIC(9,2),
-    dividend_yield NUMERIC(4,2),
-    payout_ratio NUMERIC(4,2),
+    dividend_yield NUMERIC(5,2),
+    payout_ratio NUMERIC(5,2),
     fifty_day_average NUMERIC(9,2) NOT NULL,
     two_hundred_day_average NUMERIC(9,2) NOT NULL,
     FOREIGN KEY (cik) REFERENCES cik_lookup(cik)
