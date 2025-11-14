@@ -170,7 +170,8 @@ def lookup_cik_batch(tickers: List[str]) -> Tuple[Dict[str, int], List[str]]:
 
 
 def _fetch_yahoo_summary_data(
-    tickers: List[str]
+    tickers: List[str],
+    session: Optional[Any] = None
 ) -> Tuple[Dict[str, Any], List[str]]:
     """
     Fetch summary data from Yahoo Finance.
@@ -183,15 +184,21 @@ def _fetch_yahoo_summary_data(
         - Dictionary of summary data from Yahoo Finance
         - List of invalid symbols
     """
-    # Create fresh Ticker object to get new session and crumb
-    stock = yq.Ticker(
-        tickers,
+    # Create Ticker object. If a user-managed session is provided, reuse it so
+    # cookies/crumb/connection settings are shared across batches/transactions.
+    ticker_kwargs: Dict[str, Any] = dict(
         verify=False,
         asynchronous=True,
-        status_forcelist=[404, 429, 500, 502, 503, 504],
         max_workers=MAX_WORKERS,
-        validate=True
+        validate=True,
     )
+
+    if session is not None:
+        # Pass the user-managed session into the Ticker constructor
+        stock = yq.Ticker(tickers, session=session, **ticker_kwargs)
+    else:
+        # Let Ticker create/manage its own session
+        stock = yq.Ticker(tickers, **ticker_kwargs)
     
     # Get data from multiple endpoints
     summary_data: Dict[str, Any] = stock.summary_detail  # type: ignore[assignment]
@@ -205,7 +212,7 @@ def _fetch_yahoo_summary_data(
     return summary_data, invalid_symbols  # type: ignore[return-value]
 
 
-def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
+def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: Optional[Any] = None) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
     """
     Lookup ticker summary data for multiple tickers using Yahoo Finance API.
     
@@ -222,62 +229,62 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[
     
     try:
         logger.info(f"Looking up ticker summary data for {len(tickers)} tickers...")
-        
+
         # Fetch summary data (single attempt; no crumb retry logic)
         summary_data: Dict[str, Any] = {}
         invalid_symbols: List[str] = []
 
         # Single fetch - do not attempt retries for crumb failures
-        summary_data, invalid_symbols = _fetch_yahoo_summary_data(tickers)
-        
+        summary_data, invalid_symbols = _fetch_yahoo_summary_data(tickers, session=session)
+
         # Check for invalid symbols
         if invalid_symbols:
             failed_tickers.extend(invalid_symbols)
-        
+
         # Process each ticker
         for ticker in tickers:
             if ticker in failed_tickers:
                 continue
-            
+
             try:
                 # Check if we have summary data for this ticker
                 if ticker not in summary_data or summary_data[ticker] is None:
                     logger.warning(f"No summary data available for ticker: {ticker}")
                     failed_tickers.append(ticker)
                     continue
-                
+
                 # Check if there's an error in the data
                 if _has_error(summary_data[ticker]):  # type: ignore
                     error_msg = _extract_error_message(summary_data[ticker])  # type: ignore
                     logger.warning(f"Error fetching summary data from yahoo for {ticker}: {error_msg}")
                     failed_tickers.append(ticker)
                     continue
-                
+
                 symbol_info: Dict[str, Any] = summary_data[ticker]  # type: ignore
-                
+
                 # Extract required fields
                 market_cap = symbol_info.get('marketCap')  # type: ignore
                 if market_cap is None or market_cap == 0:
                     logger.warning(f"No market cap available for ticker: {ticker}")
                     failed_tickers.append(ticker)
                     continue
-                
+
                 previous_close = symbol_info.get('previousClose')  # type: ignore
                 fifty_day_avg = symbol_info.get('fiftyDayAverage')  # type: ignore
                 two_hundred_day_avg = symbol_info.get('twoHundredDayAverage')  # type: ignore
-                
+
                 # Validate required fields
                 if previous_close is None or fifty_day_avg is None or two_hundred_day_avg is None:
                     logger.warning(f"Missing required fields for ticker: {ticker}")
                     failed_tickers.append(ticker)
                     continue
-                
+
                 # Extract optional fields
                 pe_ratio = symbol_info.get('trailingPE')  # type: ignore
                 forward_pe = symbol_info.get('forwardPE')  # type: ignore
                 dividend_yield = symbol_info.get('dividendYield')  # type: ignore
                 payout_ratio = symbol_info.get('payoutRatio')  # type: ignore
-                
+
                 # Store the ticker data
                 results[ticker] = {
                     'ticker': ticker,
@@ -290,15 +297,15 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[
                     'fifty_day_average': fifty_day_avg,
                     'two_hundred_day_average': two_hundred_day_avg
                 }
-                
+
                 logger.debug(f"Successfully looked up ticker: {ticker}")
-                
+
             except Exception as e:
                 logger.error(f"Error processing ticker {ticker}: {e}")
                 failed_tickers.append(ticker)
-        
+
         logger.info(f"Successfully looked up {len(results)} tickers, {len(failed_tickers)} failed")
-        
+
     except Exception as e:
         logger.error(f"Error during batch ticker lookup: {e}")
         raise RuntimeError(f"Failed to lookup ticker summary data: {e}")
@@ -309,7 +316,8 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[
 def process_tickers_and_persist_summaries(
     tickers: List[str],
     ticker_summary_repo: TickerSummaryRepository,
-    database_ticker_summaries: Dict[str, TickerSummary]
+    database_ticker_summaries: Dict[str, TickerSummary],
+    session: Optional[Any] = None,
 ) -> SynchronizationResult:
     """
     Process tickers in batches, lookup summary data from Yahoo Finance, and immediately persist to database.
@@ -353,7 +361,9 @@ def process_tickers_and_persist_summaries(
             continue
         
         # Step 2: Lookup ticker summary data for tickers with valid CIKs
-        batch_results, yahoo_failed = get_ticker_summary_data_batch_from_yahoo_query(tickers_with_cik)
+        # Pass the user-managed session when provided so the same async session
+        # is reused across batches and transactions.
+        batch_results, yahoo_failed = get_ticker_summary_data_batch_from_yahoo_query(tickers_with_cik, session=session)
         
         # Tickers that failed Yahoo lookup should also be removed if they exist
         for failed_ticker in yahoo_failed:

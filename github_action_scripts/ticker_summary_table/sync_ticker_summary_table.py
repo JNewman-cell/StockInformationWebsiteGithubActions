@@ -32,6 +32,7 @@ from utils.utils import (
     delete_obsolete_ticker_summaries,
 )
 from entities.synchronization_result import SynchronizationResult
+from yahooquery.session_management import initialize_session  # type: ignore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -91,13 +92,13 @@ def print_final_synchronization_statistics(
     
     # Print operation results
     logger.info(f"""
-Synchronization Results (with immediate persistence):
-  - Added: {operation_results['added']} ticker summaries (persisted immediately during lookup)
-  - Updated: {operation_results['updated']} ticker summaries (persisted immediately during lookup)
-  - Deleted: {operation_results['deleted']} ticker summaries (bulk delete)
-  - Unchanged: {len(sync_result.unchanged)} ticker summaries
-  - Failed ticker lookups: {len(sync_result.failed_ticker_lookups)}
-  - Failed due to persistent API errors: {len(sync_result.to_remove_due_to_errors)}
+        Synchronization Results (with immediate persistence):
+        - Added: {operation_results['added']} ticker summaries (persisted immediately during lookup)
+        - Updated: {operation_results['updated']} ticker summaries (persisted immediately during lookup)
+        - Deleted: {operation_results['deleted']} ticker summaries (bulk delete)
+        - Unchanged: {len(sync_result.unchanged)} ticker summaries
+        - Failed ticker lookups: {len(sync_result.failed_ticker_lookups)}
+        - Failed due to persistent API errors: {len(sync_result.to_remove_due_to_errors)}
     """)
     
     if sync_result.failed_ticker_lookups:
@@ -166,19 +167,24 @@ def main():
         database_ticker_summaries = {ts.ticker: ts for ts in database_ticker_summary_list}
         logger.info(f"Found {len(database_ticker_summaries)} ticker summaries currently in database")
         
+        # create a single asynchronous user-managed session and reuse across batches
+        # This ensures a single crumb/session is used per synchronization transaction
+        logger.info("Initializing single async yahooquery session for this synchronization transaction...")
+        s = initialize_session(None, asynchronous=True)  # type: ignore
+
         # 3. Process tickers in batches: lookup summary data and persist immediately
         # This is the key improvement - data is saved incrementally as it's retrieved
         logger.info("Processing tickers and persisting ticker summaries immediately...")
-        sync_result = process_tickers_and_persist_summaries(ticker_symbols, ticker_summary_repo, database_ticker_summaries)
+        sync_result = process_tickers_and_persist_summaries(ticker_symbols, ticker_summary_repo, database_ticker_summaries, session=s) # type: ignore
         
         stats = sync_result.get_stats()
         logger.info(f"""
-Lookup and Persistence Results:
-  - Ticker Summaries ADDED (new in sources): {stats['to_add']}
-  - Ticker Summaries UPDATED (changed data): {stats['to_update']}
-  - Ticker Summaries UNCHANGED: {stats['unchanged']}
-  - Failed ticker lookups: {stats['failed_ticker_lookups']}
-  - To remove due to persistent API errors: {stats['to_remove_due_to_errors']}
+            Lookup and Persistence Results:
+            - Ticker Summaries ADDED (new in sources): {stats['to_add']}
+            - Ticker Summaries UPDATED (changed data): {stats['to_update']}
+            - Ticker Summaries UNCHANGED: {stats['unchanged']}
+            - Failed ticker lookups: {stats['failed_ticker_lookups']}
+            - To remove due to persistent API errors: {stats['to_remove_due_to_errors']}
         """)
         
         # 4. Identify and delete ticker summaries that fail validation or are no longer in source data
