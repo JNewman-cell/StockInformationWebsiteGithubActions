@@ -342,7 +342,7 @@ def process_tickers_and_persist_summaries(
         
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} tickers)...")
         logger.info(f"Waiting in between batches to avoid rate limiting...")
-        time.sleep(1)
+        time.sleep(2)
         
         # Step 1: Lookup CIK for this batch (validates companies are real)
         batch_ciks, cik_failed = lookup_cik_batch(batch)
