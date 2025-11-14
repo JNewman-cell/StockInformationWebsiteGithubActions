@@ -19,7 +19,7 @@ from data_layer.repositories import TickerSummaryRepository
 # Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from entities.synchronization_result import SynchronizationResult
-from constants import BATCH_SIZE, MAX_WORKERS, MAX_CRUMB_RETRIES, CRUMB_RETRY_DELAY
+from constants import BATCH_SIZE, MAX_WORKERS
 
 logger = logging.getLogger(__name__)
 
@@ -111,40 +111,8 @@ def _extract_error_message(item: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _is_crumb_failure(error_message: Optional[str]) -> bool:
-    """Check if the error message indicates a crumb failure.
-    
-    Args:
-        error_message: The error message to check
-        
-    Returns:
-        True if the error is related to an invalid or missing crumb
-    """
-    if not error_message:
-        return False
-    
-    error_lower = error_message.lower()
-    return 'invalid crumb' in error_lower or 'crumb' in error_lower
 
 
-def _has_crumb_failures(summary_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
-    """Check if any tickers in the batch have crumb failures.
-    
-    Args:
-        summary_data: Dictionary of ticker data from Yahoo Finance
-        
-    Returns:
-        Tuple of (has_crumb_failures, list_of_failed_tickers)
-    """
-    crumb_failed_tickers: List[str] = []
-    
-    for ticker, data in summary_data.items():
-        if data is not None and _has_error(data):
-            error_msg = _extract_error_message(data)
-            if _is_crumb_failure(error_msg):
-                crumb_failed_tickers.append(ticker)
-    
-    return len(crumb_failed_tickers) > 0, crumb_failed_tickers
 
 
 def lookup_cik_batch(tickers: List[str]) -> Tuple[Dict[str, int], List[str]]:
@@ -201,17 +169,15 @@ def lookup_cik_batch(tickers: List[str]) -> Tuple[Dict[str, int], List[str]]:
     return results, failed_tickers
 
 
-def _fetch_yahoo_summary_data_with_retry(
-    tickers: List[str],
-    attempt: int = 1
+def _fetch_yahoo_summary_data(
+    tickers: List[str]
 ) -> Tuple[Dict[str, Any], List[str]]:
     """
-    Fetch summary data from Yahoo Finance with retry logic for crumb failures.
-    
+    Fetch summary data from Yahoo Finance.
+
     Args:
         tickers: List of ticker symbols to lookup
-        attempt: Current attempt number (used for logging)
-        
+
     Returns:
         Tuple of:
         - Dictionary of summary data from Yahoo Finance
@@ -220,7 +186,10 @@ def _fetch_yahoo_summary_data_with_retry(
     # Create fresh Ticker object to get new session and crumb
     stock = yq.Ticker(
         tickers,
+        verify=False,
+        user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36',
         asynchronous=True,
+        status_forcelist=[404, 429, 500, 502, 503, 504],
         max_workers=MAX_WORKERS,
         validate=True
     )
@@ -232,8 +201,7 @@ def _fetch_yahoo_summary_data_with_retry(
     invalid_symbols: List[str] = []
     if hasattr(stock, 'invalid_symbols') and stock.invalid_symbols:
         invalid_symbols = stock.invalid_symbols
-        if attempt == 1:  # Only log on first attempt
-            logger.warning(f"Invalid symbols found: {invalid_symbols}")
+        logger.warning(f"Invalid symbols found: {invalid_symbols}")
     
     return summary_data, invalid_symbols  # type: ignore[return-value]
 
@@ -241,7 +209,6 @@ def _fetch_yahoo_summary_data_with_retry(
 def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
     """
     Lookup ticker summary data for multiple tickers using Yahoo Finance API.
-    Implements retry logic to handle crumb failures by reinitializing session and crumb.
     
     Args:
         tickers: List of ticker symbols to lookup
@@ -257,36 +224,12 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str]) -> Tuple[
     try:
         logger.info(f"Looking up ticker summary data for {len(tickers)} tickers...")
         
-        # Fetch with retry logic for crumb failures
+        # Fetch summary data (single attempt; no crumb retry logic)
         summary_data: Dict[str, Any] = {}
         invalid_symbols: List[str] = []
-        
-        for retry_attempt in range(1, MAX_CRUMB_RETRIES + 1):
-            # Fetch data (creates fresh Ticker instance with new session/crumb)
-            summary_data, invalid_symbols = _fetch_yahoo_summary_data_with_retry(tickers, retry_attempt)
-            
-            # Check if we have crumb failures
-            has_crumb_failure, crumb_failed_tickers = _has_crumb_failures(summary_data)
-            
-            if not has_crumb_failure:
-                # Success - no crumb failures
-                if retry_attempt > 1:
-                    logger.info(f"Successfully fetched data after {retry_attempt} attempts")
-                break
-            
-            # We have crumb failures
-            if retry_attempt < MAX_CRUMB_RETRIES:
-                logger.warning(
-                    f"Crumb failure detected for {len(crumb_failed_tickers)} tickers on attempt {retry_attempt}/{MAX_CRUMB_RETRIES}. "
-                    f"Retrying in {CRUMB_RETRY_DELAY} seconds with fresh session/crumb..."
-                )
-                time.sleep(CRUMB_RETRY_DELAY)
-            else:
-                logger.error(
-                    f"Crumb failure persists after {MAX_CRUMB_RETRIES} attempts for {len(crumb_failed_tickers)} tickers: "
-                    f"{', '.join(crumb_failed_tickers[:10])}" + 
-                    (f" and {len(crumb_failed_tickers) - 10} more" if len(crumb_failed_tickers) > 10 else "")
-                )
+
+        # Single fetch - do not attempt retries for crumb failures
+        summary_data, invalid_symbols = _fetch_yahoo_summary_data(tickers)
         
         # Check for invalid symbols
         if invalid_symbols:
