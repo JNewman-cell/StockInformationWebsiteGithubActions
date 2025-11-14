@@ -341,6 +341,8 @@ def process_tickers_and_persist_summaries(
         batch_num = (i // BATCH_SIZE) + 1
         
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} tickers)...")
+        logger.info(f"Waiting in between batches to avoid rate limiting...")
+        time.sleep(1)
         
         # Step 1: Lookup CIK for this batch (validates companies are real)
         batch_ciks, cik_failed = lookup_cik_batch(batch)
@@ -364,6 +366,7 @@ def process_tickers_and_persist_summaries(
         # Pass the user-managed session when provided so the same async session
         # is reused across batches and transactions.
         batch_results, yahoo_failed = get_ticker_summary_data_batch_from_yahoo_query(tickers_with_cik, session=session)
+        
         
         # Tickers that failed Yahoo lookup should also be removed if they exist
         for failed_ticker in yahoo_failed:
@@ -462,9 +465,6 @@ def process_tickers_and_persist_summaries(
             except Exception as e:
                 logger.error(f"Batch {batch_num}: Failed to update ticker summaries: {e}")
                 raise
-        
-        print("Waiting in between batches to avoid rate limiting")
-        time.sleep(1)
     
     logger.info(f"Completed processing all {total_batches} batches")
     logger.info(f"Total: {len(sync_result.to_add)} added, {len(sync_result.to_update)} updated, "
