@@ -463,11 +463,8 @@ def process_tickers_and_persist_summaries(
                 logger.error(f"Batch {batch_num}: Failed to update ticker summaries: {e}")
                 raise
         
-        # Add delay between batches to be respectful to the API
-        if i + BATCH_SIZE < len(tickers):
-            delay = min(2.0, 1.0 + (len(tickers) / 50.0))
-            logger.debug(f"Waiting {delay:.1f} seconds before next batch...")
-            time.sleep(delay)
+        print("Waiting in between batches to avoid rate limiting")
+        time.sleep(1)
     
     logger.info(f"Completed processing all {total_batches} batches")
     logger.info(f"Total: {len(sync_result.to_add)} added, {len(sync_result.to_update)} updated, "
