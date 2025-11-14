@@ -224,7 +224,7 @@ class TickerSummary:
                 if payout_ratio <= Decimal('1'):
                     payout_ratio = payout_ratio * Decimal('100')
                     # Re-run clamp check to ensure within DB range after scaling
-                    if payout_ratio < 0 or payout_ratio > Decimal('99.99'):
+                    if payout_ratio < 0 or payout_ratio > Decimal('999.99'):
                         logger.warning(f"payout_ratio after scaling out of range; setting to None: {payout_ratio}")
                         payout_ratio = None
             except Exception:

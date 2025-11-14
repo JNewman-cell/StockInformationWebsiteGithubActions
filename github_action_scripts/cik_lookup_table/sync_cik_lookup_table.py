@@ -161,11 +161,11 @@ def main():
         
         stats = sync_result.get_stats()
         logger.info(f"""
-Lookup and Persistence Results:
-  - CIKs ADDED (new in sources): {stats['to_add']}
-  - CIKs UPDATED (changed company names): {stats['to_update']}
-  - CIKs UNCHANGED: {stats['unchanged']}
-  - Failed ticker lookups: {stats['failed_ticker_lookups']}
+            Lookup and Persistence Results:
+            - CIKs ADDED (new in sources): {stats['to_add']}
+            - CIKs UPDATED (changed company names): {stats['to_update']}
+            - CIKs UNCHANGED: {stats['unchanged']}
+            - Failed ticker lookups: {stats['failed_ticker_lookups']}
         """)
         
         # 4. Identify and delete CIKs that are no longer in source data

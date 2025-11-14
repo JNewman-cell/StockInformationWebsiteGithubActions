@@ -17,11 +17,13 @@ class CikLookup:
     Attributes:
         cik: Central Index Key (primary key)
         company_name: Name of the company
+        company_name_search: Normalized company name for similarity search (lowercase, no punctuation/spaces)
         created_at: Timestamp when the record was created
         last_updated_at: Timestamp when the record was last updated
     """
     cik: int
     company_name: str
+    company_name_search: Optional[str] = None
     created_at: Optional[datetime] = None
     last_updated_at: Optional[datetime] = None
     
@@ -29,6 +31,9 @@ class CikLookup:
         """Clean and validate the CIK lookup data after initialization."""
         # Clean company name
         self.company_name = self.company_name.strip()
+        # Clean company_name_search if provided
+        if self.company_name_search is not None:
+            self.company_name_search = self.company_name_search.strip()
         self.validate()
     
     def validate(self):
@@ -48,6 +53,11 @@ class CikLookup:
         
         if len(self.company_name) > 255:
             raise ValidationError("company_name", self.company_name, "Company name cannot be longer than 255 characters")
+        
+        # Validate company_name_search if provided
+        if self.company_name_search is not None and len(self.company_name_search) > 255:
+            raise ValidationError("company_name_search", self.company_name_search, 
+                                "Company name search cannot be longer than 255 characters")
     
     def to_dict(self, include_timestamps: bool = True) -> Dict[str, Any]:
         """
@@ -61,7 +71,8 @@ class CikLookup:
         """
         result: Dict[str, Any] = {
             'cik': self.cik,
-            'company_name': self.company_name
+            'company_name': self.company_name,
+            'company_name_search': self.company_name_search
         }
         
         if include_timestamps:
@@ -95,6 +106,7 @@ class CikLookup:
         return cls(
             cik=data['cik'],
             company_name=data['company_name'],
+            company_name_search=data.get('company_name_search'),
             created_at=created_at,
             last_updated_at=last_updated_at
         )
