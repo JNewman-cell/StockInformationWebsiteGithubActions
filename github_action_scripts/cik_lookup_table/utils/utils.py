@@ -83,8 +83,7 @@ INDUSTRY_WORDS = [
 
 # Common stopwords and connectors
 STOPWORDS = [
-    'the', 'a', 'an', 'and', 'of', 'for', 'to', 'by', 'at', 'on', 'in', 'with', 'from', 'or',
-    'vs', 'vs.', 'versus',
+    'the', 'of', 'for', 'by', 'in'
 ]
 
 # Abbreviations
