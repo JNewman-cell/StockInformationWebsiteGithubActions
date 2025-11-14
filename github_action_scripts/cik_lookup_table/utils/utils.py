@@ -482,10 +482,8 @@ def process_tickers_and_persist_ciks(
             company_name_search = normalize_company_name_for_search(company_name)
             
             if cik in database_ciks:
-                # CIK exists - check if company name changed
                 existing = database_ciks[cik]
-                if existing.company_name != company_name:
-                    # Company name changed - update it
+                if existing.company_name != company_name or existing.company_name_search != company_name_search:
                     updated_cik = CikLookup(
                         cik=cik,
                         company_name=company_name,
