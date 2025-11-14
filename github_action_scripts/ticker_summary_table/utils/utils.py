@@ -187,7 +187,6 @@ def _fetch_yahoo_summary_data(
     stock = yq.Ticker(
         tickers,
         verify=False,
-        user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36',
         asynchronous=True,
         status_forcelist=[404, 429, 500, 502, 503, 504],
         max_workers=MAX_WORKERS,

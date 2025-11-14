@@ -7,5 +7,5 @@ Constants for ticker summary table synchronization.
 BATCH_SIZE = 50
 
 # Max concurrent workers for Yahoo Finance API requests
-MAX_WORKERS = 8
+MAX_WORKERS = 6
  
