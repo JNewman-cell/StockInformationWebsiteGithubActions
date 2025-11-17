@@ -16,13 +16,17 @@ from typing import Dict, Set
 
 # Add data layer to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Ensure github_action_scripts package (contains shared utils) is on path so
+# `from utils.utils import ...` resolves to github_action_scripts/utils, not
+# a top-level utils package.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from data_layer import (
     DatabaseConnectionManager,
 )
 from data_layer.repositories import CikLookupRepository, TickerSummaryRepository
+from github_action_scripts.utils.utils import fetch_ticker_data_from_github_repo
 from utils.utils import (
-    fetch_ticker_data_from_github_repo,
     process_tickers_and_persist_ciks,
     identify_ciks_to_delete,
     delete_obsolete_ciks,

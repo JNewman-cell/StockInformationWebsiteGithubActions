@@ -8,7 +8,7 @@ import os
 import re
 import sys
 import unicodedata
-from typing import Dict, List, Tuple, Set, cast
+from typing import Dict, List, Tuple, Set
 
 # Add data layer to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -300,75 +300,16 @@ def process_company_name(name: str) -> str:
     return cleaned
 
 
-def fetch_ticker_data_from_github_repo() -> List[str]:
-    """Fetch ticker data directly from the Improved-US-Stock-Symbols GitHub repository.
-    
-    Uses the 'all_tickers.json' file which contains symbols from all exchanges.
-    This is the same source used by the stocks table synchronization.
-    
-    Returns:
-        List of normalized ticker symbols
-    """
-    import requests
-    
-    tickers: List[str] = []
-    
-    # URL for the all tickers JSON file - contains symbols from all US exchanges
-    url = 'https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/all/all_tickers.json'
-    
-    try:
-        logger.info("Fetching all US ticker data from GitHub repository...")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        
-        # Parse JSON response - should be a simple array of ticker symbols
-        ticker_symbols = response.json()
-        
-        if not isinstance(ticker_symbols, list):
-            logger.error(f"Unexpected JSON format: expected list, got {type(ticker_symbols)}")
-            raise RuntimeError("Invalid JSON format received from GitHub repository")
-            
-        # Type cast to List[str] after validation
-        ticker_symbols = cast(List[str], ticker_symbols)
-            
-        # Process each ticker symbol
-        filtered_count = 0
-        for ticker in ticker_symbols:
-            if ticker.strip():
-                # Skip tickers with ^ character (preferred shares, warrants, etc.)
-                if '^' in ticker:
-                    filtered_count += 1
-                    continue
-                    
-                # Normalize ticker by replacing / and \ with - to follow Yahoo Finance conventions
-                normalized_ticker = ticker.strip().upper().replace('/', '-').replace('\\', '-')
-                # Filter out tickers longer than 6 characters (likely invalid)
-                if len(normalized_ticker) <= 6:
-                    tickers.append(normalized_ticker)
-        
-        logger.info(f"Successfully loaded {len(tickers)} ticker symbols from GitHub repository")
-        if filtered_count > 0:
-            logger.info(f"Filtered out {filtered_count} tickers containing '^' character (preferred shares, warrants, etc.)")
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching ticker data from GitHub: {e}")
-        raise RuntimeError(f"Failed to fetch ticker data from GitHub repository: {e}")
-    except ValueError as e:
-        logger.error(f"Error parsing JSON response: {e}")
-        raise RuntimeError(f"Failed to parse ticker data from GitHub repository: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error fetching ticker data: {e}")
-        raise RuntimeError(f"Unexpected error fetching ticker data: {e}")
-    
-    if not tickers:
-        raise RuntimeError("No valid ticker symbols found in GitHub repository")
-    
-    return tickers
+# ============================================================================
+# CIK Lookup Specific Functions
+# ============================================================================
+# Note: fetch_ticker_data_from_github_repo and lookup_cik_batch are now imported from common utils
 
 
 def lookup_cik_and_company_name_batch(tickers: List[str]) -> Tuple[Dict[str, Tuple[int, str]], List[str]]:
     """
     Lookup CIK and company name for multiple tickers using sec-company-lookup.
+    This is specific to CIK lookup table - extends the common lookup_cik_batch to also get company names.
     
     Args:
         tickers: List of ticker symbols to lookup
