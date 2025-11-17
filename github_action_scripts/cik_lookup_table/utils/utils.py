@@ -2,10 +2,12 @@
 Utility functions for CIK lookup table synchronization.
 """
 
+import html
 import logging
 import os
 import re
 import sys
+import unicodedata
 from typing import Dict, List, Tuple, Set, cast, Any
 
 # Add data layer to path for imports
@@ -20,6 +22,164 @@ from entities.synchronization_result import SynchronizationResult
 from constants import BATCH_SIZE
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Company Name Search Normalization
+# ============================================================================
+
+# Legal entity suffixes to remove
+LEGAL_SUFFIXES = [
+    # Common English forms
+    'incorporated', 'corporation', 'company', 'limited',
+    # Abbreviated forms with and without periods
+    'inc.', 'inc', 'corp.', 'corp', 'co.', 'co', 'ltd.', 'ltd',
+    'llc', 'l.l.c.', 'l.l.c', 'lp', 'l.p.', 'l.p', 'llp', 'l.l.p.', 'l.l.p',
+    'plc',
+    # International forms
+    'gmbh', 'ag', 's.a.', 's.a', 'sa', 'n.v.', 'n.v', 'nv', 'b.v.', 'b.v', 'bv',
+    'spa', 's.p.a.', 's.p.a', 'sarl', 's.a.r.l.', 's.a.r.l',
+    'pty.', 'pty', 'srl', 's.r.l.', 's.r.l',
+    # Nordic/other
+    'a/s', 'as', 'oy', 'ab', 'oyj',
+]
+
+# Ownership, structure, and finance words
+STRUCTURE_WORDS = [
+    'holdings', 'holding', 'hldgs', 'hldg',
+    'group', 'group.',
+    'partners', 'partner',
+    'trust', 'trustee', 'trustees',
+    'fund', 'funds', 'investment', 'investments', 'capital', 'ventures', 'venture',
+    'management', 'mgmt', 'advisors', 'advisor', 'advisory',
+    'securities', 'assets',
+    'realty', 'properties', 'property',
+    'bancorp', 'financial', 'finance',
+]
+
+# Transaction and lifecycle words
+TRANSACTION_WORDS = [
+    'acquisition', 'acquisitions', 'acquire', 'acquired', 'acq.', 'acq',
+    'merger', 'mergers', 'merged', 'mrg',
+    'purchase', 'purchases', 'bought', 'buying',
+    'takeover', 'spin-off', 'spinoff',
+    'divestiture', 'divest', 'divests',
+    'reorganization', 'reorg', 'restructuring',
+]
+
+# Industry and business descriptors
+INDUSTRY_WORDS = [
+    'technology', 'technologies', 'tech', 'systems', 'solutions', 'software',
+    'services', 'service', 'networks', 'network', 'telecom', 'telecommunications', 'communications',
+    'international', 'intl', 'intl.', 'global', 'globals', 'worldwide',
+    'industrial', 'industries', 'industrials',
+    'manufacturing', 'manuf', 'manuf.',
+    'engineering', 'engineering.',
+    'digital', 'media', 'energy', 'resources',
+    'healthcare', 'health', 'medical', 'bio', 'biotech', 'biosciences', 'bioscience',
+    'pharmaceutical', 'pharma', 'pharmaceuticals',
+    'retail', 'consumer', 'commercial',
+]
+
+# Common stopwords and connectors
+STOPWORDS = [
+    'the', 'of', 'for', 'by', 'in'
+]
+
+# Abbreviations
+ABBREVIATIONS = [
+    'svc', 'svc.', 'svcs', 'svcs.',
+    'sys', 'sys.',
+    'mfg', 'mfg.',
+    'trx',
+    'biz',
+]
+
+# Financial instruments
+FINANCIAL_TERMS = [
+    'etf', 'etn', 'reit', 'spv', 'spac',
+]
+
+# Build comprehensive removal list (sorted by descending length for proper matching)
+REMOVAL_WORDS = sorted(
+    set(LEGAL_SUFFIXES + STRUCTURE_WORDS + TRANSACTION_WORDS + 
+        INDUSTRY_WORDS + STOPWORDS + ABBREVIATIONS + FINANCIAL_TERMS),
+    key=len,
+    reverse=True
+)
+
+
+def normalize_company_name_for_search(company_name: str) -> str:
+    """
+    Normalize company name for search by removing legal suffixes, common words,
+    punctuation, and applying Unicode normalization. This produces a clean,
+    lowercase, space-free string optimized for similarity matching.
+    
+    Normalization steps (in order):
+    1. Unicode normalize (NFKC) and strip BOM
+    2. Convert to lowercase
+    3. Decode HTML entities (&amp; etc.)
+    4. Normalize diacritics to ASCII (remove accents)
+    5. Replace ampersand with space
+    6. Remove all punctuation and symbols (keep only letters, digits, spaces)
+    7. Remove common legal/business words as whole words
+    8. Remove all remaining whitespace
+    
+    Args:
+        company_name: Original company name
+        
+    Returns:
+        Normalized search string (lowercase, no spaces, no punctuation)
+        
+    Examples:
+        "Acme Holdings, Inc." -> "acme"
+        "The ABC Co., Ltd." -> "abc"
+        "Global-Tech Systems, LLC" -> "globaltech"
+        "Johnson & Johnson" -> "johnsonjohnson"
+        "Société Générale S.A." -> "societe"
+    """
+    if not company_name:
+        return ""
+    
+    # Step 1: Unicode normalize (NFKC handles compatibility characters)
+    normalized = unicodedata.normalize('NFKC', company_name)
+    
+    # Step 2: Convert to lowercase
+    normalized = normalized.lower()
+    
+    # Step 3: Decode HTML entities (e.g., &amp; -> &)
+    normalized = html.unescape(normalized)
+    
+    # Step 4: Normalize diacritics to ASCII
+    # NFKD decomposes characters, then filter out combining marks
+    nfkd_form = unicodedata.normalize('NFKD', normalized)
+    ascii_text = ''.join(char for char in nfkd_form if not unicodedata.combining(char))
+    normalized = ascii_text
+    
+    # Step 5: Replace ampersand with space (before removing punctuation)
+    normalized = normalized.replace('&', ' ')
+    
+    # Step 6: Remove punctuation and symbols - keep only letters, digits, and spaces
+    # This removes: . , : ; ' " ` ! ? ( ) [ ] { } - _ / \ | + = * ^ % $ # @ ~ < >
+    normalized = re.sub(r'[^a-z0-9\s]', '', normalized)
+    
+    # Step 7: Remove common words as whole words
+    # Build regex pattern with word boundaries
+    if REMOVAL_WORDS:
+        # Escape special regex characters in words
+        escaped_words = [re.escape(word) for word in REMOVAL_WORDS]
+        pattern = r'\b(' + '|'.join(escaped_words) + r')\b'
+        normalized = re.sub(pattern, ' ', normalized)
+    
+    # Step 8: Collapse whitespace and remove all spaces
+    normalized = re.sub(r'\s+', '', normalized)
+    
+    # Final cleanup: strip any remaining whitespace (shouldn't be any)
+    normalized = normalized.strip()
+    
+    # Handle edge case: if normalization removed everything, return empty string
+    # (caller can decide whether to use original or handle specially)
+    return normalized
 
 
 def normalize_company_name(name: str) -> str:
@@ -498,14 +658,16 @@ def process_tickers_and_persist_ciks(
         ciks_to_update: List[CikLookup] = []
         
         for cik, company_name in cik_to_company_name.items():
+            # Compute normalized search string for this company name
+            company_name_search = normalize_company_name_for_search(company_name)
+            
             if cik in database_ciks:
-                # CIK exists - check if company name changed
                 existing = database_ciks[cik]
-                if existing.company_name != company_name:
-                    # Company name changed - update it
+                if existing.company_name != company_name or existing.company_name_search != company_name_search:
                     updated_cik = CikLookup(
                         cik=cik,
                         company_name=company_name,
+                        company_name_search=company_name_search,
                         created_at=existing.created_at,
                         last_updated_at=existing.last_updated_at
                     )
@@ -515,7 +677,11 @@ def process_tickers_and_persist_ciks(
                     sync_result.unchanged.append(cik)
             else:
                 # New CIK - add it
-                new_cik = CikLookup(cik=cik, company_name=company_name)
+                new_cik = CikLookup(
+                    cik=cik,
+                    company_name=company_name,
+                    company_name_search=company_name_search
+                )
                 ciks_to_add.append(new_cik)
         
         # Immediately persist new CIKs to database

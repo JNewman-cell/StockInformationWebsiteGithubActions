@@ -73,8 +73,8 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             raise DuplicateCikError(cik_lookup.cik)
         
         insert_query = """
-        INSERT INTO cik_lookup (cik, company_name, created_at, last_updated_at)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO cik_lookup (cik, company_name, company_name_search, created_at, last_updated_at)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING created_at, last_updated_at;
         """
         
@@ -85,6 +85,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
                 cursor.execute(insert_query, (
                     cik_lookup.cik,
                     cik_lookup.company_name,
+                    cik_lookup.company_name_search,
                     current_time,
                     current_time
                 ))
@@ -121,8 +122,8 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             return 0
         
         insert_query = """
-        INSERT INTO cik_lookup (cik, company_name, created_at, last_updated_at)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO cik_lookup (cik, company_name, company_name_search, created_at, last_updated_at)
+        VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (cik) DO NOTHING;
         """
         
@@ -132,7 +133,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             with self.db_manager.get_cursor_context() as cursor:
                 # Prepare data for batch insert
                 data = [
-                    (entity.cik, entity.company_name, current_time, current_time)
+                    (entity.cik, entity.company_name, entity.company_name_search, current_time, current_time)
                     for entity in entities
                 ]
                 
@@ -169,7 +170,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             DatabaseQueryError: If database operation fails
         """
         select_query = """
-        SELECT cik, company_name, created_at, last_updated_at
+        SELECT cik, company_name, company_name_search, created_at, last_updated_at
         FROM cik_lookup
         WHERE cik = %s;
         """
@@ -183,8 +184,9 @@ class CikLookupRepository(BaseRepository[CikLookup]):
                     return CikLookup(
                         cik=result[0],
                         company_name=result[1],
-                        created_at=result[2],
-                        last_updated_at=result[3]
+                        company_name_search=result[2],
+                        created_at=result[3],
+                        last_updated_at=result[4]
                     )
                 return None
                 
@@ -209,7 +211,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         """
         if exact_match:
             select_query = """
-            SELECT cik, company_name, created_at, last_updated_at
+            SELECT cik, company_name, company_name_search, created_at, last_updated_at
             FROM cik_lookup
             WHERE LOWER(company_name) = LOWER(%s)
             LIMIT 1;
@@ -217,7 +219,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             params = (company_name.strip(),)
         else:
             select_query = """
-            SELECT cik, company_name, created_at, last_updated_at
+            SELECT cik, company_name, company_name_search, created_at, last_updated_at
             FROM cik_lookup
             WHERE LOWER(company_name) LIKE LOWER(%s)
             LIMIT 1;
@@ -233,8 +235,9 @@ class CikLookupRepository(BaseRepository[CikLookup]):
                     return CikLookup(
                         cik=result[0],
                         company_name=result[1],
-                        created_at=result[2],
-                        last_updated_at=result[3]
+                        company_name_search=result[2],
+                        created_at=result[3],
+                        last_updated_at=result[4]
                     )
                 return None
                 
@@ -257,7 +260,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             DatabaseQueryError: If database operation fails
         """
         select_query = """
-        SELECT cik, company_name, created_at, last_updated_at
+        SELECT cik, company_name, company_name_search, created_at, last_updated_at
         FROM cik_lookup
         WHERE LOWER(company_name) LIKE LOWER(%s)
         ORDER BY company_name
@@ -273,8 +276,9 @@ class CikLookupRepository(BaseRepository[CikLookup]):
                     CikLookup(
                         cik=row[0],
                         company_name=row[1],
-                        created_at=row[2],
-                        last_updated_at=row[3]
+                        company_name_search=row[2],
+                        created_at=row[3],
+                        last_updated_at=row[4]
                     )
                     for row in results
                 ]
@@ -299,7 +303,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         """
         # Use parameterized query parts for safe SQL construction
         query_parts = ["""
-        SELECT cik, company_name, created_at, last_updated_at
+        SELECT cik, company_name, company_name_search, created_at, last_updated_at
         FROM cik_lookup
         ORDER BY cik"""]
         
@@ -323,8 +327,9 @@ class CikLookupRepository(BaseRepository[CikLookup]):
                     CikLookup(
                         cik=row[0],
                         company_name=row[1],
-                        created_at=row[2],
-                        last_updated_at=row[3]
+                        company_name_search=row[2],
+                        created_at=row[3],
+                        last_updated_at=row[4]
                     )
                     for row in results
                 ]
@@ -407,7 +412,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         
         update_query = """
         UPDATE cik_lookup
-        SET company_name = %s, last_updated_at = %s
+        SET company_name = %s, company_name_search = %s, last_updated_at = %s
         WHERE cik = %s
         RETURNING created_at, last_updated_at;
         """
@@ -418,6 +423,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
                 
                 cursor.execute(update_query, (
                     cik_lookup.company_name,
+                    cik_lookup.company_name_search,
                     current_time,
                     cik_lookup.cik
                 ))
@@ -477,7 +483,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
         
         update_query = """
         UPDATE cik_lookup
-        SET company_name = %s, last_updated_at = %s
+        SET company_name = %s, company_name_search = %s, last_updated_at = %s
         WHERE cik = %s;
         """
         
@@ -487,7 +493,7 @@ class CikLookupRepository(BaseRepository[CikLookup]):
             with self.db_manager.get_cursor_context() as cursor:
                 # Prepare data for batch update
                 data = [
-                    (entity.company_name, current_time, entity.cik)
+                    (entity.company_name, entity.company_name_search, current_time, entity.cik)
                     for entity in entities
                 ]
                 
