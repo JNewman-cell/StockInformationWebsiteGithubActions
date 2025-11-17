@@ -208,7 +208,7 @@ class TickerSummary:
                 if dividend_yield <= Decimal('1'):
                     dividend_yield = dividend_yield * Decimal('100')
                     # Re-run clamp check to ensure within DB range after scaling
-                    if dividend_yield < 0 or dividend_yield > Decimal('99.99'):
+                    if dividend_yield < 0 or dividend_yield > Decimal('999.99'):
                         logger.warning(f"dividend_yield after scaling out of range; setting to None: {dividend_yield}")
                         dividend_yield = None
             except Exception:
@@ -219,14 +219,29 @@ class TickerSummary:
         # Convert payout_ratio from fraction to percentage when appropriate.
         # Many data sources return payout_ratio as a fraction (e.g., 0.25 for 25%).
         # If the value is <= 1, assume it's a fraction and multiply by 100 so the DB stores a percent.
+        # Additionally, treat values that are 0 or extremely small (effectively zero) as None.
         if payout_ratio is not None:
             try:
+                # If the source gives a fraction (<= 1), scale to percent
                 if payout_ratio <= Decimal('1'):
                     payout_ratio = payout_ratio * Decimal('100')
-                    # Re-run clamp check to ensure within DB range after scaling
-                    if payout_ratio < 0 or payout_ratio > Decimal('999.99'):
-                        logger.warning(f"payout_ratio after scaling out of range; setting to None: {payout_ratio}")
+
+                # Treat very small/zero payout ratios as missing data
+                # Values smaller than EPSILON_PERCENT (in percent) are considered effectively zero
+                EPSILON_PERCENT = Decimal('0.01')
+                try:
+                    if payout_ratio == Decimal('0') or payout_ratio.copy_abs() < EPSILON_PERCENT:
                         payout_ratio = None
+                        # short-circuit further checks
+                    else:
+                        # Re-run clamp check to ensure within DB range after scaling
+                        if payout_ratio < 0 or payout_ratio > Decimal('999.99'):
+                            logger.warning(f"payout_ratio after scaling out of range; setting to None: {payout_ratio}")
+                            payout_ratio = None
+                except Exception:
+                    # Any problem comparing -> be conservative and drop the value
+                    logger.warning(f"Could not determine if payout_ratio is effectively zero; setting to None")
+                    payout_ratio = None
             except Exception:
                 # If any comparison/conversion fails, set to None to be safe
                 logger.warning(f"Could not scale payout_ratio value; setting to None")
