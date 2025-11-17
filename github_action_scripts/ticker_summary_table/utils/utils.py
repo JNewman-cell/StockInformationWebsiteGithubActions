@@ -6,8 +6,7 @@ import logging
 import os
 import sys
 import time
-import requests
-from typing import Dict, List, Set, Tuple, Optional, Any
+from typing import Dict, List, Set, Tuple, Optional, Any, Callable
 import yahooquery as yq  # type: ignore
 
 # Add data layer to path for imports
@@ -20,68 +19,15 @@ from data_layer.repositories import TickerSummaryRepository
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from entities.synchronization_result import SynchronizationResult
 from constants import BATCH_SIZE, MAX_WORKERS
+# Note: common utilities are imported by the syncing scripts (sync_*.py).
 
 logger = logging.getLogger(__name__)
 
 
-def fetch_ticker_data_from_github_repo() -> List[str]:
-    """Fetch ticker data directly from the Improved-US-Stock-Symbols GitHub repository.
-    
-    Uses the 'all_tickers.json' file which contains symbols from all exchanges.
-    
-    Returns:
-        List of normalized ticker symbols
-    """
-    tickers: List[str] = []
-    
-    # URL for the all tickers JSON file - contains symbols from all US exchanges
-    url = 'https://raw.githubusercontent.com/JNewman-cell/Improved-US-Stock-Symbols/main/all/all_tickers.json'
-    
-    try:
-        logger.info("Fetching all US ticker data from GitHub repository...")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        
-        # Parse JSON response - should be a simple array of ticker symbols
-        ticker_symbols: List[str] = response.json()  # type: ignore
-        
-        if not isinstance(ticker_symbols, list):  # type: ignore
-            logger.error(f"Unexpected JSON format: expected list, got {type(ticker_symbols)}")
-            raise RuntimeError("Invalid JSON format received from GitHub repository")
-            
-        # Process each ticker symbol
-        filtered_count = 0
-        for ticker in ticker_symbols:
-            if isinstance(ticker, str) and ticker.strip():  # type: ignore
-                # Skip tickers with ^ character (preferred shares, warrants, etc.)
-                if '^' in ticker:
-                    filtered_count += 1
-                    continue
-                    
-                # Normalize ticker by replacing / and \ with - to follow Yahoo Finance conventions
-                normalized_ticker = ticker.strip().upper().replace('/', '-').replace('\\', '-')
-                # Filter out tickers longer than 6 characters (likely invalid)
-                if len(normalized_ticker) <= 6:
-                    tickers.append(normalized_ticker)
-        
-        logger.info(f"Successfully loaded {len(tickers)} ticker symbols from GitHub repository")
-        if filtered_count > 0:
-            logger.info(f"Filtered out {filtered_count} tickers containing '^' character (preferred shares, warrants, etc.)")
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching ticker data from GitHub: {e}")
-        raise RuntimeError(f"Failed to fetch ticker data from GitHub repository: {e}")
-    except ValueError as e:
-        logger.error(f"Error parsing JSON response: {e}")
-        raise RuntimeError(f"Failed to parse ticker data from GitHub repository: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error fetching ticker data: {e}")
-        raise RuntimeError(f"Unexpected error fetching ticker data: {e}")
-    
-    if not tickers:
-        raise RuntimeError("No valid ticker symbols found in GitHub repository")
-    
-    return tickers
+# ============================================================================
+# Ticker Summary Specific Functions
+# ============================================================================
+# Note: fetch_ticker_data_from_github_repo and lookup_cik_batch are now imported from common utils
 
 
 def _has_error(item: Dict[str, Any]) -> bool:
@@ -109,64 +55,6 @@ def _extract_error_message(item: Dict[str, Any]) -> Optional[str]:
         return error_obj.get('message') or error_obj.get('type')
     
     return None
-
-
-
-
-
-
-def lookup_cik_batch(tickers: List[str]) -> Tuple[Dict[str, int], List[str]]:
-    """
-    Lookup CIK for multiple tickers using sec-company-lookup.
-    
-    Args:
-        tickers: List of ticker symbols to lookup
-        
-    Returns:
-        Tuple of:
-        - Dictionary mapping ticker to CIK
-        - List of tickers that failed CIK lookup
-    """
-    from sec_company_lookup import get_companies_by_tickers
-    
-    results: Dict[str, int] = {}
-    failed_tickers: List[str] = []
-    
-    try:
-        logger.info(f"Looking up CIK for {len(tickers)} tickers...")
-        batch_results = get_companies_by_tickers(tickers)
-        
-        if batch_results is None:
-            logger.error("CIK batch lookup returned None")
-            raise RuntimeError("Failed to lookup CIKs: batch lookup returned None")
-        
-        for ticker in tickers:
-            if ticker in batch_results:  # type: ignore
-                result = batch_results[ticker]  # type: ignore
-                
-                if result.get('success') and result.get('data'):  # type: ignore
-                    company_data = result['data']  # type: ignore
-                    cik = company_data.get('cik')  # type: ignore
-                    
-                    if cik is not None:
-                        results[ticker] = cik
-                    else:
-                        logger.debug(f"No CIK found for ticker {ticker}")
-                        failed_tickers.append(ticker)
-                else:
-                    logger.debug(f"Failed to lookup CIK for ticker {ticker}: {result.get('error', 'Unknown error')}")  # type: ignore
-                    failed_tickers.append(ticker)
-            else:
-                logger.debug(f"No CIK result for ticker {ticker}")
-                failed_tickers.append(ticker)
-        
-        logger.info(f"Successfully looked up CIK for {len(results)} tickers, {len(failed_tickers)} failed")
-        
-    except Exception as e:
-        logger.error(f"Error during batch CIK lookup: {e}")
-        raise RuntimeError(f"Failed to lookup CIKs: {e}")
-    
-    return results, failed_tickers
 
 
 def _fetch_yahoo_summary_data(
@@ -318,6 +206,7 @@ def process_tickers_and_persist_summaries(
     ticker_summary_repo: TickerSummaryRepository,
     database_ticker_summaries: Dict[str, TickerSummary],
     session: Optional[Any] = None,
+    lookup_cik_func: Optional[Callable[[List[str]], Tuple[Dict[str, int], List[str]]]] = None,
 ) -> SynchronizationResult:
     """
     Process tickers in batches, lookup summary data from Yahoo Finance, and immediately persist to database.
@@ -345,7 +234,9 @@ def process_tickers_and_persist_summaries(
         time.sleep(4)
         
         # Step 1: Lookup CIK for this batch (validates companies are real)
-        batch_ciks, cik_failed = lookup_cik_batch(batch)
+        if lookup_cik_func is None:
+            raise RuntimeError("lookup_cik_func must be provided to process_tickers_and_persist_summaries")
+        batch_ciks, cik_failed = lookup_cik_func(batch)
         
         # Tickers that failed CIK lookup should be removed from database if they exist
         for failed_ticker in cik_failed:

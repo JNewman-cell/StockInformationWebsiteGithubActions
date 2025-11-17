@@ -20,13 +20,20 @@ from typing import Dict, Set
 
 # Add data layer to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Ensure github_action_scripts package (contains shared utils) is on path so
+# `from utils.utils import ...` resolves to github_action_scripts/utils, not
+# a top-level utils package.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from data_layer import (
     DatabaseConnectionManager,
     TickerSummaryRepository,
 )
-from utils.utils import (
+from github_action_scripts.utils.utils import (
     fetch_ticker_data_from_github_repo,
+    lookup_cik_batch,
+)
+from utils.utils import (
     process_tickers_and_persist_summaries,
     identify_tickers_to_delete,
     delete_obsolete_ticker_summaries,
@@ -175,7 +182,13 @@ def main():
         # 3. Process tickers in batches: lookup summary data and persist immediately
         # This is the key improvement - data is saved incrementally as it's retrieved
         logger.info("Processing tickers and persisting ticker summaries immediately...")
-        sync_result = process_tickers_and_persist_summaries(ticker_symbols, ticker_summary_repo, database_ticker_summaries, session=s) # type: ignore
+        sync_result = process_tickers_and_persist_summaries(
+            ticker_symbols,
+            ticker_summary_repo,
+            database_ticker_summaries,
+            session=s, # type: ignore
+            lookup_cik_func=lookup_cik_batch,
+        )
         
         stats = sync_result.get_stats()
         logger.info(f"""
