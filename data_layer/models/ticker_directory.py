@@ -12,6 +12,7 @@ from ..exceptions import ValidationError
 
 class TickerDirectoryStatus(str, Enum):
     """Enum for ticker directory status values."""
+    # Use lowercase values to match the database ENUM values ('active','inactive')
     ACTIVE = "active"
     INACTIVE = "inactive"
 
@@ -40,6 +41,15 @@ class TickerDirectory:
         """Clean and validate the ticker directory data after initialization."""
         # Clean ticker
         self.ticker = self.ticker.strip().upper()
+        # Normalize status if a plain string was provided (accept case-insensitive values)
+        # Use strict type check because TickerDirectoryStatus is a str subclass
+        if type(self.status) is str:
+            try:
+                # prefer lowercase matching to DB enum
+                self.status = TickerDirectoryStatus(self.status.lower())
+            except ValueError:
+                # fallback to direct conversion (will raise if invalid)
+                self.status = TickerDirectoryStatus(self.status)
         
         self.validate()
     
@@ -98,10 +108,14 @@ class TickerDirectory:
         Raises:
             ValidationError: If data is invalid
         """
-        # Convert status string to enum if needed
+        # Convert status string to enum if needed (be case-insensitive and tolerant)
         status = data.get('status')
         if isinstance(status, str):
-            status_enum = TickerDirectoryStatus(status)
+            try:
+                status_enum = TickerDirectoryStatus(status.lower())
+            except ValueError:
+                # last resort try direct (this will raise if invalid)
+                status_enum = TickerDirectoryStatus(status)
         else:
             status_enum = status if status else TickerDirectoryStatus.ACTIVE
         
