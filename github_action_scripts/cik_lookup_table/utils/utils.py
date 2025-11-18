@@ -14,7 +14,7 @@ from typing import Dict, List, Tuple, Set
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from data_layer.models import CikLookup
-from data_layer.repositories import CikLookupRepository, TickerSummaryRepository
+from data_layer.repositories import CikLookupRepository, TickerSummaryRepository, TickerDirectoryRepository
 
 # Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -507,6 +507,7 @@ def identify_ciks_to_delete(
 def delete_obsolete_ciks(
     cik_repo: CikLookupRepository,
     ticker_summary_repo: TickerSummaryRepository,
+    ticker_directory_repo: TickerDirectoryRepository,
     ciks_to_delete: List[int]
 ) -> int:
     """
@@ -536,7 +537,11 @@ def delete_obsolete_ciks(
         batch_num = (i // BATCH_SIZE) + 1
         
         try:
-            # First delete from ticker_summary table to avoid foreign key constraint
+            # First delete from ticker_directory to avoid FK on ticker_summary
+            ticker_directory_deleted = ticker_directory_repo.bulk_delete_by_cik(batch)
+            logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {ticker_directory_deleted} ticker directory entries")
+
+            # Then delete from ticker_summary table to avoid foreign key constraint
             ticker_summary_deleted = ticker_summary_repo.bulk_delete_by_cik(batch)
             logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {ticker_summary_deleted} ticker summaries")
             
