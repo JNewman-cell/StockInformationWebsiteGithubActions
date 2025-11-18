@@ -24,11 +24,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from data_layer import (
     DatabaseConnectionManager,
 )
-from data_layer.repositories import TickerDirectoryRepository
-from github_action_scripts.utils.utils import (
-    fetch_ticker_data_from_github_repo,
-    lookup_cik_batch,
-)
+from data_layer.repositories import TickerDirectoryRepository, TickerSummaryRepository
 from github_action_scripts.ticker_directory_table.utils.utils import (
     process_tickers_and_build_sync_plan,
 )
@@ -145,18 +141,16 @@ def main():
     try:
         logger.info("=== Starting Ticker Directory Table Synchronization ===")
         
-        # 1. Fetch ticker data from GitHub repository
-        logger.info("Fetching ticker data from GitHub repository...")
-        ticker_symbols = fetch_ticker_data_from_github_repo()
-        logger.info(f"Loaded {len(ticker_symbols)} ticker symbols from GitHub repository")
-        
-        # 2. Lookup CIKs for all tickers
-        logger.info("Looking up CIKs for tickers...")
-        ticker_to_cik_map, failed_tickers = lookup_cik_batch(ticker_symbols)
-        logger.info(f"Successfully mapped {len(ticker_to_cik_map)} tickers to CIKs")
-        
-        if failed_tickers:
-            logger.warning(f"{len(failed_tickers)} tickers failed CIK lookup")
+        # 1. Load tickers and CIKs from the ticker_summary table
+        logger.info("Loading ticker symbols and CIKs from ticker_summary table...")
+        ticker_summary_repo = TickerSummaryRepository(db_manager)
+        ticker_summaries = ticker_summary_repo.get_all()
+        ticker_symbols = [ts.ticker for ts in ticker_summaries]
+        # Map tickers to their CIKs directly from the summary table.
+        # If any ticker has no CIK recorded in ticker_summary, treat it as a failed lookup.
+        ticker_to_cik_map = {ts.ticker: ts.cik for ts in ticker_summaries if ts.cik is not None}
+        failed_tickers = [ts.ticker for ts in ticker_summaries if ts.cik is None]
+        logger.info(f"Loaded {len(ticker_symbols)} ticker symbols from ticker_summary table")
         
         # 3. Get current database state (all entries)
         logger.info("Retrieving current database state...")
@@ -164,8 +158,8 @@ def main():
         database_tickers = {entry.ticker: entry for entry in database_entries if entry.ticker}
         logger.info(f"Found {len(database_tickers)} ticker directory entries currently in database")
         
-        # 4. Process GitHub tickers in batches and persist immediately
-        logger.info("Processing GitHub tickers and persisting changes immediately...")
+        # 4. Process tickers from ticker_summary and persist changes immediately
+        logger.info("Processing tickers from ticker_summary and persisting changes immediately...")
         sync_result = process_tickers_and_build_sync_plan(
             ticker_to_cik_map,
             ticker_directory_repo,
