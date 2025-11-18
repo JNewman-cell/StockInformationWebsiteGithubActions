@@ -29,7 +29,7 @@ from github_action_scripts.utils.utils import (
     fetch_ticker_data_from_github_repo,
     lookup_cik_batch,
 )
-from utils.utils import (
+from github_action_scripts.ticker_directory_table.utils.utils import (
     process_tickers_and_build_sync_plan,
 )
 from entities.synchronization_result import SynchronizationResult
