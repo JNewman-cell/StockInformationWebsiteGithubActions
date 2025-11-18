@@ -113,11 +113,10 @@ class TickerDirectoryRepository(BaseRepository[TickerDirectory]):
         """
         if not entities:
             return 0
-        
         insert_query = """
         INSERT INTO ticker_directory (ticker, cik, status)
         VALUES (%s, %s, %s)
-        ON CONFLICT (ticker) DO NOTHING;
+        ON CONFLICT (cik, ticker) DO NOTHING;
         """
         
         try:
@@ -637,10 +636,27 @@ class TickerDirectoryRepository(BaseRepository[TickerDirectory]):
         Returns:
             TickerDirectory entity
         """
+        # Normalize DB enum (could be 'active' or 'ACTIVE') into our Enum
+        raw_status = row[4]
+        status_enum: TickerDirectoryStatus
+        if isinstance(raw_status, str):
+            try:
+                # Try mapping from uppercase of the raw label (our Enum uses uppercase labels)
+                status_enum = TickerDirectoryStatus(raw_status.upper())
+            except ValueError:
+                # As a last resort, try direct construction (this may raise)
+                status_enum = TickerDirectoryStatus(raw_status)
+        else:
+            # If driver returned an enum-like object, coerce to string then to enum
+            try:
+                status_enum = TickerDirectoryStatus(str(raw_status))
+            except Exception:
+                status_enum = TickerDirectoryStatus.ACTIVE
+
         return TickerDirectory(
             ticker=row[1],
             cik=row[0],
-            status=TickerDirectoryStatus(row[4]),
+            status=status_enum,
             id=row[5],
             created_at=row[2],
             last_updated_at=row[3]

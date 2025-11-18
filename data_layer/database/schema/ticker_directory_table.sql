@@ -10,6 +10,7 @@ CREATE TABLE ticker_directory (
     status ticker_directory_status NOT NULL,
     id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
     CONSTRAINT ticker_directory_pkey PRIMARY KEY (id),
+    CONSTRAINT cik_ticker_pair UNIQUE (cik, ticker),
     CONSTRAINT cik FOREIGN KEY (cik) REFERENCES cik_lookup(cik),
     CONSTRAINT ticker FOREIGN KEY (ticker) REFERENCES ticker_summary(ticker)
 );
