@@ -12,9 +12,9 @@ from ..exceptions import ValidationError
 
 class TickerDirectoryStatus(str, Enum):
     """Enum for ticker directory status values."""
-    # Use lowercase values to match the database ENUM values ('active','inactive')
-    ACTIVE = "active"
-    INACTIVE = "inactive"
+    # Use uppercase values to match the database ENUM labels ('ACTIVE','INACTIVE')
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
 
 
 @dataclass
@@ -45,10 +45,10 @@ class TickerDirectory:
         # Use strict type check because TickerDirectoryStatus is a str subclass
         if type(self.status) is str:
             try:
-                # prefer lowercase matching to DB enum
-                self.status = TickerDirectoryStatus(self.status.lower())
+                # Prefer uppercase to match DB enum labels
+                self.status = TickerDirectoryStatus(self.status.upper())
             except ValueError:
-                # fallback to direct conversion (will raise if invalid)
+                # Fallback to direct conversion (will raise if invalid)
                 self.status = TickerDirectoryStatus(self.status)
         
         self.validate()
@@ -112,7 +112,7 @@ class TickerDirectory:
         status = data.get('status')
         if isinstance(status, str):
             try:
-                status_enum = TickerDirectoryStatus(status.lower())
+                status_enum = TickerDirectoryStatus(status.upper())
             except ValueError:
                 # last resort try direct (this will raise if invalid)
                 status_enum = TickerDirectoryStatus(status)
@@ -148,10 +148,21 @@ class TickerDirectory:
         Returns:
             TickerDirectory instance
         """
+        # row[4] is the status label from the DB. Be tolerant to casing differences.
+        raw_status = row[4]
+        if isinstance(raw_status, str):
+            try:
+                status_enum = TickerDirectoryStatus(raw_status)
+            except ValueError:
+                # Try uppercase form
+                status_enum = TickerDirectoryStatus(str(raw_status).upper())
+        else:
+            status_enum = TickerDirectoryStatus.ACTIVE
+
         return TickerDirectory(
             ticker=row[1],
             cik=row[0],
-            status=TickerDirectoryStatus(row[4]),
+            status=status_enum,
             id=row[5],
             created_at=row[2],
             last_updated_at=row[3]
