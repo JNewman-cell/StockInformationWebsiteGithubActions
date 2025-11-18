@@ -8,13 +8,13 @@ import os
 import re
 import sys
 import unicodedata
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Tuple
 
 # Add data layer to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from data_layer.models import CikLookup
-from data_layer.repositories import CikLookupRepository, TickerSummaryRepository, TickerDirectoryRepository
+from data_layer.repositories import CikLookupRepository
 
 # Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -475,83 +475,3 @@ def process_tickers_and_persist_ciks(
                 f"{len(sync_result.unchanged)} unchanged, {len(sync_result.failed_ticker_lookups)} failed lookups")
     
     return sync_result
-
-
-def identify_ciks_to_delete(
-    database_ciks: Dict[int, CikLookup],
-    processed_ciks: Set[int]
-) -> List[int]:
-    """
-    Identify CIKs in database that were not found in the source data.
-    These should be deleted as they are no longer valid.
-    
-    Args:
-        database_ciks: Dictionary of all CIKs currently in database
-        processed_ciks: Set of CIK numbers that were found in source data
-        
-    Returns:
-        List of CIK numbers to delete from database
-    """
-    ciks_to_delete: List[int] = []
-    
-    for cik in database_ciks.keys():
-        if cik not in processed_ciks:
-            ciks_to_delete.append(cik)
-    
-    if ciks_to_delete:
-        logger.info(f"Found {len(ciks_to_delete)} CIKs in database that are not in source data")
-    
-    return ciks_to_delete
-
-
-def delete_obsolete_ciks(
-    cik_repo: CikLookupRepository,
-    ticker_summary_repo: TickerSummaryRepository,
-    ticker_directory_repo: TickerDirectoryRepository,
-    ciks_to_delete: List[int]
-) -> int:
-    """
-    Delete CIKs from database that are no longer in source data.
-    First deletes from ticker_summary table to avoid foreign key constraint violations,
-    then deletes from cik_lookup table.
-    
-    Args:
-        cik_repo: CIK lookup repository for database operations
-        ticker_summary_repo: Ticker summary repository for database operations
-        ciks_to_delete: List of CIK numbers to delete
-        
-    Returns:
-        Number of CIKs successfully deleted
-    """
-    if not ciks_to_delete:
-        logger.info("No obsolete CIKs to delete")
-        return 0
-    
-    logger.info(f"Deleting {len(ciks_to_delete)} obsolete CIKs in batches of {BATCH_SIZE}")
-    
-    total_deleted = 0
-    total_batches = (len(ciks_to_delete) + BATCH_SIZE - 1) // BATCH_SIZE
-    
-    for i in range(0, len(ciks_to_delete), BATCH_SIZE):
-        batch = ciks_to_delete[i:i + BATCH_SIZE]
-        batch_num = (i // BATCH_SIZE) + 1
-        
-        try:
-            # First delete from ticker_directory to avoid FK on ticker_summary
-            ticker_directory_deleted = ticker_directory_repo.bulk_delete_by_cik(batch)
-            logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {ticker_directory_deleted} ticker directory entries")
-
-            # Then delete from ticker_summary table to avoid foreign key constraint
-            ticker_summary_deleted = ticker_summary_repo.bulk_delete_by_cik(batch)
-            logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {ticker_summary_deleted} ticker summaries")
-            
-            # Then delete from cik_lookup table
-            deleted_count = cik_repo.bulk_delete(batch)
-            total_deleted += deleted_count
-            logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {deleted_count}/{len(batch)} CIKs")
-        except Exception as e:
-            logger.error(f"Delete batch {batch_num}: Failed to delete CIKs: {e}")
-            raise
-    
-    logger.info(f"Successfully deleted {total_deleted} obsolete CIKs from database")
-    return total_deleted

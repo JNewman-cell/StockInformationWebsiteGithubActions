@@ -5,14 +5,13 @@ This script synchronizes CIK lookup data with the database using a deterministic
 It fetches ticker symbols from the same source as the stocks table, then uses sec-company-lookup
 to retrieve CIK and company name information. The script performs:
 - Adds new CIK entries from sources that are not in the database
-- Removes CIK entries from database that are no longer in sources
 - Updates CIK entries that have changed company names
 """
 
 import logging
 import os
 import sys
-from typing import Dict, Set
+from typing import Dict
 
 # Add data layer to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -24,12 +23,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from data_layer import (
     DatabaseConnectionManager,
 )
-from data_layer.repositories import CikLookupRepository, TickerSummaryRepository, TickerDirectoryRepository
+from data_layer.repositories import CikLookupRepository
 from github_action_scripts.utils.utils import fetch_ticker_data_from_github_repo
 from utils.utils import (
     process_tickers_and_persist_ciks,
-    identify_ciks_to_delete,
-    delete_obsolete_ciks,
 )
 from entities.synchronization_result import SynchronizationResult
 
@@ -84,7 +81,7 @@ def print_final_synchronization_statistics(
     
     Args:
         cik_repo: CIK lookup repository instance
-        operation_results: Dictionary with operation counts (added, updated, deleted)
+        operation_results: Dictionary with operation counts (added, updated)
         sync_result: SynchronizationResult with details
     """
     logger.info("=== Synchronization Complete ===")
@@ -94,7 +91,6 @@ def print_final_synchronization_statistics(
 Synchronization Results (with immediate persistence):
   - Added: {operation_results['added']} CIK entries (persisted immediately during lookup)
   - Updated: {operation_results['updated']} CIK entries (persisted immediately during lookup)
-  - Deleted: {operation_results['deleted']} CIK entries (bulk delete)
   - Unchanged: {len(sync_result.unchanged)} CIK entries
   - Failed ticker lookups: {len(sync_result.failed_ticker_lookups)}
     """)
@@ -107,13 +103,11 @@ Synchronization Results (with immediate persistence):
                       f"{'...' if len(sync_result.failed_ticker_lookups) > sample_size else ''}")
     
     # Print success summary
-    total_operations = (operation_results['added'] + operation_results['deleted'] + 
-                       operation_results['updated'])
+    total_operations = (operation_results['added'] + operation_results['updated'])
     print(f"\nSynchronization completed successfully with immediate persistence!")
     print(f"Total operations performed: {total_operations}")
     print(f"  - {operation_results['added']} CIK entries added (persisted immediately)")
     print(f"  - {operation_results['updated']} CIK entries updated (persisted immediately)")
-    print(f"  - {operation_results['deleted']} CIK entries deleted")
     print(f"  - {len(sync_result.unchanged)} CIK entries unchanged")
     print(f"  - {len(sync_result.failed_ticker_lookups)} tickers failed CIK lookup")
     
@@ -133,8 +127,6 @@ def main():
         logger.info("Initializing data layer...")
         db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
         cik_repo = CikLookupRepository(db_manager)
-        ticker_summary_repo = TickerSummaryRepository(db_manager)
-        ticker_directory_repo = TickerDirectoryRepository(db_manager)
         
         # Check database connectivity and table structure
         if not check_database_connectivity(db_manager, cik_repo):
@@ -173,30 +165,13 @@ def main():
             - Failed ticker lookups: {stats['failed_ticker_lookups']}
         """)
         
-        # 4. Identify and delete CIKs that are no longer in source data
-        logger.info("Identifying obsolete CIKs...")
-        processed_ciks: Set[int] = set()
-        for cik_lookup in sync_result.to_add:
-            processed_ciks.add(cik_lookup.cik)
-        for cik_lookup in sync_result.to_update:
-            processed_ciks.add(cik_lookup.cik)
-        processed_ciks.update(sync_result.unchanged)
-        
-        ciks_to_delete = identify_ciks_to_delete(database_ciks, processed_ciks)
-        
-        if ciks_to_delete:
-            logger.info(f"Deleting {len(ciks_to_delete)} obsolete CIKs...")
-            deleted_count = delete_obsolete_ciks(cik_repo, ticker_summary_repo, ticker_directory_repo, ciks_to_delete)
-            sync_result.to_delete = ciks_to_delete
-        else:
-            logger.info("No obsolete CIKs to delete")
-            deleted_count = 0
+        # Note: No deletion of CIKs - only insert and update operations
+        logger.info("Synchronization complete - no deletion operations performed")
         
         # 5. Print final statistics
         final_stats = {
             'added': len(sync_result.to_add),
             'updated': len(sync_result.to_update),
-            'deleted': deleted_count
         }
         print_final_synchronization_statistics(cik_repo, final_stats, sync_result)
     
