@@ -151,9 +151,9 @@ class TickerSummary:
 
             # Note: negative values are allowed for fields like PE ratios.
             # For ratio fields (dividend_yield, payout_ratio) clamp out-of-range to None
-            # Schema uses NUMERIC(4,2) which supports up to 99.99, so allow 0..99.99
+            # Schema uses NUMERIC(5,2) which supports up to 999.99, so allow 0..999.99
             if clamp_ratio_to_null:
-                max_ratio = Decimal('99.99')
+                max_ratio = Decimal('999.99')
                 if dec < 0 or dec > max_ratio:
                     logger.warning(f"{field_name} out of expected range 0..{max_ratio}; setting to None: {dec}")
                     return None
