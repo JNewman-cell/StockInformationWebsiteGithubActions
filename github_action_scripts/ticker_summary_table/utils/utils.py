@@ -6,28 +6,27 @@ import logging
 import os
 import sys
 import time
-from typing import Dict, List, Set, Tuple, Optional, Any, Callable
+from typing import Dict, List, Set, Tuple, Optional, Any
 import yahooquery as yq  # type: ignore
 
 # Add data layer to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from data_layer.models.ticker_summary import TickerSummary
-from data_layer.repositories import TickerSummaryRepository
+from data_layer.models.cik_lookup import CikLookup
+from data_layer.repositories import TickerSummaryRepository, CikLookupRepository
 
 # Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from entities.synchronization_result import SynchronizationResult
 from constants import BATCH_SIZE, MAX_WORKERS
-# Note: common utilities are imported by the syncing scripts (sync_*.py).
+
+# Import common utilities - use the CIK+company name version from cik_lookup_table
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from github_action_scripts.cik_lookup_table.utils.utils import lookup_cik_and_company_name_batch
+from github_action_scripts.cik_lookup_table.utils.utils import normalize_company_name_for_search
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Ticker Summary Specific Functions
-# ============================================================================
-# Note: fetch_ticker_data_from_github_repo and lookup_cik_batch are now imported from common utils
 
 
 def _has_error(item: Dict[str, Any]) -> bool:
@@ -204,18 +203,21 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
 def process_tickers_and_persist_summaries(
     tickers: List[str],
     ticker_summary_repo: TickerSummaryRepository,
+    cik_lookup_repo: CikLookupRepository,
     database_ticker_summaries: Dict[str, TickerSummary],
     session: Optional[Any] = None,
-    lookup_cik_func: Optional[Callable[[List[str]], Tuple[Dict[str, int], List[str]]]] = None,
 ) -> SynchronizationResult:
     """
     Process tickers in batches, lookup summary data from Yahoo Finance, and immediately persist to database.
     This ensures data is saved incrementally as it's retrieved, not all at once.
+    Also ensures CIKs are in the cik_lookup table before inserting ticker summaries.
     
     Args:
         tickers: List of ticker symbols to process
         ticker_summary_repo: TickerSummary repository for database operations
+        cik_lookup_repo: CikLookup repository for validating/inserting CIKs
         database_ticker_summaries: Dictionary of existing ticker summaries in database for comparison
+        session: Optional user-managed session for Yahoo Finance API requests
         
     Returns:
         SynchronizationResult containing operation statistics
@@ -233,10 +235,8 @@ def process_tickers_and_persist_summaries(
         logger.info(f"Waiting in between batches to avoid rate limiting...")
         time.sleep(4)
         
-        # Step 1: Lookup CIK for this batch (validates companies are real)
-        if lookup_cik_func is None:
-            raise RuntimeError("lookup_cik_func must be provided to process_tickers_and_persist_summaries")
-        batch_ciks, cik_failed = lookup_cik_func(batch)
+        # Step 1: Lookup CIK and company name for this batch (validates companies are real)
+        batch_cik_results, cik_failed = lookup_cik_and_company_name_batch(batch)
         
         # Tickers that failed CIK lookup should be removed from database if they exist
         for failed_ticker in cik_failed:
@@ -246,6 +246,33 @@ def process_tickers_and_persist_summaries(
             else:
                 logger.debug(f"Ticker {failed_ticker} failed CIK lookup, skipping")
             sync_result.failed_ticker_lookups.append(failed_ticker)
+        
+        # Extract CIKs and ensure they're in the cik_lookup table
+        batch_ciks: Dict[str, int] = {}
+        ciks_to_insert: List[CikLookup] = []
+        
+        for ticker, (cik, company_name) in batch_cik_results.items():
+            batch_ciks[ticker] = cik
+            
+            # Check if CIK exists in database
+            existing_cik = cik_lookup_repo.get_by_cik(cik)
+            if existing_cik is None:
+                # Need to insert this CIK
+                company_name_search = normalize_company_name_for_search(company_name)
+                ciks_to_insert.append(CikLookup(
+                    cik=cik,
+                    company_name=company_name,
+                    company_name_search=company_name_search
+                ))
+        
+        # Insert missing CIKs before processing ticker summaries
+        if ciks_to_insert:
+            try:
+                inserted_count = cik_lookup_repo.bulk_insert(ciks_to_insert)
+                logger.info(f"Batch {batch_num}: Inserted {inserted_count} missing CIKs into cik_lookup table")
+            except Exception as e:
+                logger.error(f"Batch {batch_num}: Failed to insert CIKs: {e}")
+                raise
         
         # Only process tickers that have valid CIKs
         tickers_with_cik = list(batch_ciks.keys())
