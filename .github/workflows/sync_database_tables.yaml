@@ -44,7 +44,7 @@ jobs:
         python github_action_scripts/cik_lookup_table/sync_cik_lookup_table.py
 
   update-ticker-summary-database:
-    needs: update-cik-lookup-database
+    needs: [update-cik-lookup-database]
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -82,7 +82,7 @@ jobs:
         python github_action_scripts/ticker_summary_table/sync_ticker_summary_table.py
 
   update-ticker-directory-database:
-    needs: update-ticker-summary-database
+    needs: [update-ticker-summary-database]
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -120,7 +120,7 @@ jobs:
         python github_action_scripts/ticker_directory_table/sync_ticker_directory_table.py
 
   update-ticker-overview-database:
-    needs: update-ticker-summary-database
+    needs: [update-ticker-summary-database]
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
