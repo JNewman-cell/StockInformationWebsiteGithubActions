@@ -118,3 +118,40 @@ jobs:
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
       run: |
         python github_action_scripts/ticker_directory_table/sync_ticker_directory_table.py
+
+  update-ticker-overview-database:
+    needs: update-ticker-summary-database
+    runs-on: ubuntu-latest
+    environment: "GitHub Actions Secrets"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install dependencies (create virtualenv)
+      run: |
+        # Always create a fresh virtual environment on the runner. Caching
+        # an entire venv is brittle across runner images and Python patchlevels
+        # and can lead to missing executables (observed in CI). Instead rely
+        # on pip caching (setup-python 'cache: pip') and create the venv each run.
+        python -m venv .venv
+        # Use the venv's python to upgrade pip and install dependencies
+        . .venv/bin/activate
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir -r requirements.txt
+        # Make the venv's bin directory available to all subsequent steps in this job
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+
+    - name: Synchronize ticker overview database
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: |
+        python github_action_scripts/ticker_overview_table/sync_ticker_overview_table.py

@@ -23,37 +23,10 @@ from constants import BATCH_SIZE, MAX_WORKERS
 
 # Import common utilities - use the CIK+company name version from cik_lookup_table
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from github_action_scripts.cik_lookup_table.utils.utils import lookup_cik_and_company_name_batch
-from github_action_scripts.cik_lookup_table.utils.utils import normalize_company_name_for_search
+from github_action_scripts.cik_lookup_table.utils.utils import lookup_cik_and_company_name_batch, normalize_company_name_for_search
+from github_action_scripts.utils.utils import has_error, extract_error_message, convert_to_percentage, sanitize_decimal
 
 logger = logging.getLogger(__name__)
-
-
-def _has_error(item: Dict[str, Any]) -> bool:
-    """Check if the response item contains an error.
-
-    Checks for the current structured 'error' object returned by the Yahoo endpoint.
-    Returns True if an error is found.
-    
-    Expected structure: {'EAI': {'error': {'code': 404, 'type': 'NotFoundError', 
-                                           'message': '...', 'symbol': 'EAI'}}}
-    """
-    return bool(item.get('error'))
-
-
-def _extract_error_message(item: Dict[str, Any]) -> Optional[str]:
-    """Return an error message string if the response item contains an error.
-
-    Extracts error message from the current structured 'error' object
-    returned by the Yahoo endpoint. Returns None when no error is found.
-    
-    Expected structure: {'EAI': {'error': {'code': 404, 'type': 'NotFoundError', 
-                                           'message': '...', 'symbol': 'EAI'}}}
-    """
-    if error_obj := item.get('error'):
-        return error_obj.get('message') or error_obj.get('type')
-    
-    return None
 
 
 def _fetch_yahoo_summary_data(
@@ -141,8 +114,8 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                     continue
 
                 # Check if there's an error in the data
-                if _has_error(summary_data[ticker]):  # type: ignore
-                    error_msg = _extract_error_message(summary_data[ticker])  # type: ignore
+                if has_error(summary_data[ticker]):  # type: ignore
+                    error_msg = extract_error_message(summary_data[ticker])  # type: ignore
                     logger.warning(f"Error fetching summary data from yahoo for {ticker}: {error_msg}")
                     failed_tickers.append(ticker)
                     continue
@@ -171,6 +144,19 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                 forward_pe = symbol_info.get('forwardPE')  # type: ignore
                 dividend_yield = symbol_info.get('dividendYield')  # type: ignore
                 payout_ratio = symbol_info.get('payoutRatio')  # type: ignore
+                
+                # Convert dividend_yield and payout_ratio from decimal (0.XXXX) to percentage (XX.XX)
+                dividend_yield = convert_to_percentage(dividend_yield)
+                payout_ratio = convert_to_percentage(payout_ratio)
+                
+                # Sanitize all numeric values to fit database constraints
+                previous_close = sanitize_decimal(previous_close, 15, 2)
+                pe_ratio = sanitize_decimal(pe_ratio, 10, 2)
+                forward_pe = sanitize_decimal(forward_pe, 10, 2)
+                dividend_yield = sanitize_decimal(dividend_yield, 5, 2)
+                payout_ratio = sanitize_decimal(payout_ratio, 5, 2)
+                fifty_day_avg = sanitize_decimal(fifty_day_avg, 10, 2)
+                two_hundred_day_avg = sanitize_decimal(two_hundred_day_avg, 10, 2)
 
                 # Store the ticker data
                 results[ticker] = {

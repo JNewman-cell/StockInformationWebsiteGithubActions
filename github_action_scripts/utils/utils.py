@@ -4,7 +4,8 @@ Common utility functions shared across GitHub action scripts.
 
 import logging
 import requests
-from typing import Dict, List, Tuple, Any, cast
+from typing import Dict, List, Tuple, Any, cast, Optional
+from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
@@ -305,3 +306,96 @@ def lookup_cik_batch(tickers: List[str]) -> Tuple[Dict[str, int], List[str]]:
         raise RuntimeError(f"Failed to lookup CIKs: {e}")
     
     return results, failed_tickers
+
+
+# ============================================================================
+# Yahoo Finance API Utilities
+# ============================================================================
+
+def has_error(item: Dict[str, Any]) -> bool:
+    """Check if the response item contains an error.
+
+    Checks for the current structured 'error' object returned by the Yahoo endpoint.
+    Returns True if an error is found.
+    
+    Expected structure: {'AAPL': {'error': {'code': 404, 'type': 'NotFoundError', 
+                                           'message': '...', 'symbol': 'AAPL'}}}
+    """
+    return bool(item.get('error'))
+
+
+def extract_error_message(item: Dict[str, Any]) -> Optional[str]:
+    """Return an error message string if the response item contains an error.
+
+    Extracts error message from the current structured 'error' object
+    returned by the Yahoo endpoint. Returns None when no error is found.
+    
+    Expected structure: {'AAPL': {'error': {'code': 404, 'type': 'NotFoundError', 
+                                           'message': '...', 'symbol': 'AAPL'}}}
+    """
+    if error_obj := item.get('error'):
+        return error_obj.get('message') or error_obj.get('type')
+    
+    return None
+
+
+def convert_to_percentage(value: Any) -> Optional[Decimal]:
+    """
+    Convert a decimal value (0.XXXX format) to percentage (XX.XX format).
+    For example, 0.1234 becomes 12.34
+    
+    Args:
+        value: Value to convert (can be None, numeric, or string)
+        
+    Returns:
+        Converted percentage value or None if invalid
+    """
+    if value is None:
+        return None
+    
+    try:
+        decimal_val = Decimal(str(value))
+        # Convert from 0.XXXX to XX.XX by multiplying by 100
+        percentage = decimal_val * 100
+        # Round to 2 decimal places
+        return round(percentage, 2)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def sanitize_decimal(value: Any, max_digits: int = 7, decimal_places: int = 2) -> Optional[Decimal]:
+    """
+    Sanitize a numeric value to fit within database constraints.
+    
+    Args:
+        value: Value to sanitize
+        max_digits: Maximum total digits (including decimal places)
+        decimal_places: Number of decimal places
+        
+    Returns:
+        Sanitized Decimal value or None if invalid
+    """
+    if value is None:
+        return None
+    
+    try:
+        decimal_val = Decimal(str(value))
+        
+        # Check for special values
+        if decimal_val.is_nan() or decimal_val.is_infinite():
+            return None
+        
+        # Round to specified decimal places
+        rounded = round(decimal_val, decimal_places)
+        
+        # Check if value fits within the numeric type constraints
+        max_value = Decimal(10 ** (max_digits - decimal_places)) - Decimal(10 ** (-decimal_places))
+        min_value = -max_value
+        
+        if rounded < min_value or rounded > max_value:
+            logger.warning(f"Value {rounded} exceeds database constraints, setting to None")
+            return None
+        
+        return rounded
+    except (InvalidOperation, ValueError, TypeError):
+        return None
