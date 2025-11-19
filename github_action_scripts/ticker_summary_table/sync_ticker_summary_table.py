@@ -29,9 +29,9 @@ from data_layer import (
     DatabaseConnectionManager,
     TickerSummaryRepository,
 )
+from data_layer.repositories import CikLookupRepository
 from github_action_scripts.utils.utils import (
     fetch_ticker_data_from_github_repo,
-    lookup_cik_batch,
 )
 from utils.utils import (
     process_tickers_and_persist_summaries,
@@ -150,6 +150,7 @@ def main():
         logger.info("Initializing data layer...")
         db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
         ticker_summary_repo = TickerSummaryRepository(db_manager)
+        cik_lookup_repo = CikLookupRepository(db_manager)
         
         # Check database connectivity and table structure
         if not check_database_connectivity(db_manager, ticker_summary_repo):
@@ -185,9 +186,9 @@ def main():
         sync_result = process_tickers_and_persist_summaries(
             ticker_symbols,
             ticker_summary_repo,
+            cik_lookup_repo,
             database_ticker_summaries,
             session=s, # type: ignore
-            lookup_cik_func=lookup_cik_batch,
         )
         
         stats = sync_result.get_stats()
