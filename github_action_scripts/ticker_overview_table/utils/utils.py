@@ -56,9 +56,18 @@ def _fetch_yahoo_overview_data(
     else:
         stock = yq.Ticker(tickers, **ticker_kwargs)
     
-    # Get data from key_stats and financial_data modules
-    key_stats_data: Dict[str, Any] = stock.key_stats  # type: ignore[assignment]
-    financial_data: Dict[str, Any] = stock.financial_data  # type: ignore[assignment]
+    # Get data from key_stats and financial_data modules in one API call
+    modules_data = stock.get_modules(['defaultKeyStatistics', 'financialData'])  # type: ignore[assignment]
+    
+    # Reorganize data to match original format (ticker -> data)
+    key_stats_data: Dict[str, Any] = {}
+    financial_data: Dict[str, Any] = {}
+    
+    for ticker in tickers:
+        if ticker in modules_data:
+            ticker_data = modules_data[ticker]  # type: ignore[assignment]
+            key_stats_data[ticker] = ticker_data.get('defaultKeyStatistics', {})  # type: ignore[assignment]
+            financial_data[ticker] = ticker_data.get('financialData', {})  # type: ignore[assignment]
     
     # Get invalid symbols
     invalid_symbols: List[str] = []
