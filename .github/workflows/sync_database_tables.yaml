@@ -6,34 +6,52 @@ on:
   workflow_dispatch:  # Enable manual trigger
     inputs:
       run_all:
-        description: 'When checked, run all update jobs (default).'
+        description: 'ALL (default).'
         required: false
         default: true
         type: boolean
       run_cik:
-        description: 'Run the CIK lookup table update.'
+        description: 'CIK_LOOKUP'
         required: false
         default: false
         type: boolean
       run_summary:
-        description: 'Run the ticker summary table update.'
+        description: 'TICKER_SUMMARY'
         required: false
         default: false
         type: boolean
       run_directory:
-        description: 'Run the ticker directory table update.'
+        description: 'TICKER_DIRECTORY'
         required: false
         default: false
         type: boolean
       run_overview:
-        description: 'Run the ticker overview table update.'
+        description: 'TICKER_OVERVIEW'
         required: false
         default: false
         type: boolean
 
 jobs:
+  validate-inputs:
+    name: Validate manual inputs
+    runs-on: ubuntu-latest
+    # We always run validation, but it will only enforce checks on manual runs
+    steps:
+      - name: Validate that 'ALL' is not selected with other options
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.run_all }}" = "true" ]; then
+              if [ "${{ github.event.inputs.run_cik }}" = "true" ] || [ "${{ github.event.inputs.run_summary }}" = "true" ] || [ "${{ github.event.inputs.run_directory }}" = "true" ] || [ "${{ github.event.inputs.run_overview }}" = "true" ]; then
+                echo "Invalid input: 'ALL' cannot be selected together with one or more other options. Uncheck 'ALL' or deselect the other options and try again."
+                exit 1
+              fi
+            fi
+          fi
+        shell: bash
+
   update-cik-lookup-database:
     # only run when scheduled or when the user selected 'all' or 'cik' in workflow_dispatch inputs
+    needs: [validate-inputs]
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == true || github.event.inputs.run_cik == true))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
@@ -94,8 +112,8 @@ jobs:
         python github_action_scripts/cik_lookup_table/sync_cik_lookup_table.py
 
   update-ticker-summary-database:
+    needs: [validate-inputs, update-cik-lookup-database]
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == true || github.event.inputs.run_summary == true))
-    needs: [update-cik-lookup-database]
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -152,7 +170,7 @@ jobs:
         python github_action_scripts/ticker_summary_table/sync_ticker_summary_table.py
 
   update-ticker-directory-database:
-    needs: [update-ticker-summary-database]
+    needs: [validate-inputs, update-ticker-summary-database]
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == true || github.event.inputs.run_directory == true))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
@@ -210,7 +228,7 @@ jobs:
         python github_action_scripts/ticker_directory_table/sync_ticker_directory_table.py
 
   update-ticker-overview-database:
-    needs: [update-ticker-summary-database]
+    needs: [validate-inputs, update-ticker-summary-database]
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == true || github.event.inputs.run_overview == true))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
