@@ -4,9 +4,55 @@ on:
   schedule:
     - cron: '0 8 * * *'  # Runs every day at 7:00 AM UTC
   workflow_dispatch:  # Enable manual trigger
+    inputs:
+      run_all:
+        description: 'ALL (default)'
+        required: false
+        default: false
+        type: boolean
+      run_cik:
+        description: 'CIK_LOOKUP'
+        required: false
+        default: false
+        type: boolean
+      run_summary:
+        description: 'TICKER_SUMMARY'
+        required: false
+        default: false
+        type: boolean
+      run_directory:
+        description: 'TICKER_DIRECTORY'
+        required: false
+        default: false
+        type: boolean
+      run_overview:
+        description: 'TICKER_OVERVIEW'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
+  validate-inputs:
+    name: Validate manual inputs
+    runs-on: ubuntu-latest
+    # We always run validation, but it will only enforce checks on manual runs
+    steps:
+      - name: Validate that 'ALL' is not selected with other options
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.run_all }}" = "true" ]; then
+              if [ "${{ github.event.inputs.run_cik }}" = "true" ] || [ "${{ github.event.inputs.run_summary }}" = "true" ] || [ "${{ github.event.inputs.run_directory }}" = "true" ] || [ "${{ github.event.inputs.run_overview }}" = "true" ]; then
+                echo "Invalid input: 'ALL' cannot be selected together with one or more other options. Uncheck 'ALL' or deselect the other options and try again."
+                exit 1
+              fi
+            fi
+          fi
+        shell: bash
+
   update-cik-lookup-database:
+    # only run when scheduled or when the user selected 'all' or 'cik' in workflow_dispatch inputs
+    needs: [validate-inputs]
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == true || github.event.inputs.run_cik == true))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -41,10 +87,38 @@ jobs:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
       run: |
+        # compute SELECTED_TABLES from checkbox inputs for manual runs;
+        # for scheduled runs we'll default to 'all'
+        if [ "${{ github.event_name }}" = "schedule" ]; then
+          export SELECTED_TABLES=all
+        else
+          if [ "${{ github.event.inputs.run_all }}" = "true" ]; then
+            export SELECTED_TABLES=all
+          else
+            SELECTED_TABLES=""
+            if [ "${{ github.event.inputs.run_cik }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}cik,"; fi
+            if [ "${{ github.event.inputs.run_summary }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}summary,"; fi
+            if [ "${{ github.event.inputs.run_directory }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}directory,"; fi
+            if [ "${{ github.event.inputs.run_overview }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}overview,"; fi
+            SELECTED_TABLES=${SELECTED_TABLES%,}
+            # If user checks none, default to 'all' for safety (or set to 'none')
+            if [ -z "${SELECTED_TABLES}" ]; then
+              export SELECTED_TABLES=all
+            else
+              export SELECTED_TABLES
+            fi
+          fi
+        fi
         python github_action_scripts/cik_lookup_table/sync_cik_lookup_table.py
 
   update-ticker-summary-database:
-    needs: [update-cik-lookup-database]
+    needs: [validate-inputs, update-cik-lookup-database]
+    if: |
+      always() && 
+      !cancelled() && 
+      (needs.update-cik-lookup-database.result == 'success' || needs.update-cik-lookup-database.result == 'skipped') && 
+      (github.event_name == 'schedule' || 
+       (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == 'true' || github.event.inputs.run_summary == 'true')))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -79,10 +153,35 @@ jobs:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
       run: |
+        if [ "${{ github.event_name }}" = "schedule" ]; then
+          export SELECTED_TABLES=all
+        else
+          if [ "${{ github.event.inputs.run_all }}" = "true" ]; then
+            export SELECTED_TABLES=all
+          else
+            SELECTED_TABLES=""
+            if [ "${{ github.event.inputs.run_cik }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}cik,"; fi
+            if [ "${{ github.event.inputs.run_summary }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}summary,"; fi
+            if [ "${{ github.event.inputs.run_directory }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}directory,"; fi
+            if [ "${{ github.event.inputs.run_overview }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}overview,"; fi
+            SELECTED_TABLES=${SELECTED_TABLES%,}
+            if [ -z "${SELECTED_TABLES}" ]; then
+              export SELECTED_TABLES=all
+            else
+              export SELECTED_TABLES
+            fi
+          fi
+        fi
         python github_action_scripts/ticker_summary_table/sync_ticker_summary_table.py
 
   update-ticker-directory-database:
-    needs: [update-ticker-summary-database]
+    needs: [validate-inputs, update-ticker-summary-database]
+    if: |
+      always() && 
+      !cancelled() && 
+      (needs.update-ticker-summary-database.result == 'success' || needs.update-ticker-summary-database.result == 'skipped') && 
+      (github.event_name == 'schedule' || 
+       (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == 'true' || github.event.inputs.run_directory == 'true')))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -117,10 +216,35 @@ jobs:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
       run: |
+        if [ "${{ github.event_name }}" = "schedule" ]; then
+          export SELECTED_TABLES=all
+        else
+          if [ "${{ github.event.inputs.run_all }}" = "true" ]; then
+            export SELECTED_TABLES=all
+          else
+            SELECTED_TABLES=""
+            if [ "${{ github.event.inputs.run_cik }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}cik,"; fi
+            if [ "${{ github.event.inputs.run_summary }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}summary,"; fi
+            if [ "${{ github.event.inputs.run_directory }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}directory,"; fi
+            if [ "${{ github.event.inputs.run_overview }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}overview,"; fi
+            SELECTED_TABLES=${SELECTED_TABLES%,}
+            if [ -z "${SELECTED_TABLES}" ]; then
+              export SELECTED_TABLES=all
+            else
+              export SELECTED_TABLES
+            fi
+          fi
+        fi
         python github_action_scripts/ticker_directory_table/sync_ticker_directory_table.py
 
   update-ticker-overview-database:
-    needs: [update-ticker-summary-database]
+    needs: [validate-inputs, update-ticker-summary-database]
+    if: |
+      always() && 
+      !cancelled() && 
+      (needs.update-ticker-summary-database.result == 'success' || needs.update-ticker-summary-database.result == 'skipped') && 
+      (github.event_name == 'schedule' || 
+       (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_all == 'true' || github.event.inputs.run_overview == 'true')))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -154,4 +278,23 @@ jobs:
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
       run: |
+        if [ "${{ github.event_name }}" = "schedule" ]; then
+          export SELECTED_TABLES=all
+        else
+          if [ "${{ github.event.inputs.run_all }}" = "true" ]; then
+            export SELECTED_TABLES=all
+          else
+            SELECTED_TABLES=""
+            if [ "${{ github.event.inputs.run_cik }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}cik,"; fi
+            if [ "${{ github.event.inputs.run_summary }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}summary,"; fi
+            if [ "${{ github.event.inputs.run_directory }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}directory,"; fi
+            if [ "${{ github.event.inputs.run_overview }}" = "true" ]; then SELECTED_TABLES="${SELECTED_TABLES}overview,"; fi
+            SELECTED_TABLES=${SELECTED_TABLES%,}
+            if [ -z "${SELECTED_TABLES}" ]; then
+              export SELECTED_TABLES=all
+            else
+              export SELECTED_TABLES
+            fi
+          fi
+        fi
         python github_action_scripts/ticker_overview_table/sync_ticker_overview_table.py

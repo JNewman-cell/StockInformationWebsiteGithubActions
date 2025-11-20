@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def _fetch_yahoo_overview_data(
     tickers: List[str],
     session: Optional[Any] = None
-) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], List[str]]:
     """
     Fetch overview data from Yahoo Finance using key_stats and financial_data modules.
 
@@ -62,12 +62,26 @@ def _fetch_yahoo_overview_data(
     # Reorganize data to match original format (ticker -> data)
     key_stats_data: Dict[str, Any] = {}
     financial_data: Dict[str, Any] = {}
+    valuation_measures_data: Dict[str, Any] = {}
     
     for ticker in tickers:
         if ticker in modules_data:
             ticker_data = modules_data[ticker]  # type: ignore[assignment]
             key_stats_data[ticker] = ticker_data.get('defaultKeyStatistics', {})  # type: ignore[assignment]
             financial_data[ticker] = ticker_data.get('financialData', {})  # type: ignore[assignment]
+
+    # Attempt to fetch current valuation measures using the financials APIs
+    try:
+        current_valuation = getattr(stock, 'current_valuation_measures', None)
+        if callable(current_valuation):
+            # Will return a dict keyed by symbol -> valuation measures record
+            val_data = stock.current_valuation_measures()  # type: ignore[assignment]
+            if isinstance(val_data, dict):
+                valuation_measures_data = val_data
+    except Exception:
+        # Be defensive - if any exception occurs while fetching valuation measures,
+        # continue without breaking existing behavior and leave valuation_measures_data empty.
+        valuation_measures_data = {}
     
     # Get invalid symbols
     invalid_symbols: List[str] = []
@@ -75,7 +89,7 @@ def _fetch_yahoo_overview_data(
         invalid_symbols = stock.invalid_symbols
         logger.warning(f"Invalid symbols found: {invalid_symbols}")
     
-    return key_stats_data, financial_data, invalid_symbols  # type: ignore[return-value]
+    return key_stats_data, financial_data, valuation_measures_data, invalid_symbols  # type: ignore[return-value]
 
 
 def get_ticker_overview_data_batch_from_yahoo_query(
@@ -117,7 +131,7 @@ def get_ticker_overview_data_batch_from_yahoo_query(
         invalid_symbols: List[str] = []
 
         # Single fetch - do not attempt retries for crumb failures
-        key_stats_data, financial_data, invalid_symbols = _fetch_yahoo_overview_data(tickers, session=session)
+        key_stats_data, financial_data, valuation_measures_data, invalid_symbols = _fetch_yahoo_overview_data(tickers, session=session)
 
         # Check for invalid symbols
         if invalid_symbols:
@@ -132,6 +146,8 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                 # Get data from both modules
                 key_stats = key_stats_data.get(ticker) if key_stats_data else None
                 fin_data = financial_data.get(ticker) if financial_data else None
+                val_rec = valuation_measures_data.get(ticker) if valuation_measures_data else None
+
                 
                 # Check for errors in either dataset
                 has_key_stats_error = key_stats and has_error(key_stats)
@@ -152,19 +168,22 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                     failed_tickers.append(ticker)
                     continue
                 
-                # Extract fields from key_stats
+                # Extract fields from valuation measures
                 enterprise_to_ebitda = None
                 price_to_book = None
+                peg_ratio = None
+
+                if val_rec and isinstance(val_rec, dict):
+                    enterprise_to_ebitda = val_rec.get('EnterprisesValueEBITDARatio')
+                    price_to_book = val_rec.get('PbRatio')
+                    peg_ratio = val_rec.get('PegRatio')
+
                 trailing_eps = None
                 forward_eps = None
-                peg_ratio = None
-                
+                # Extract fields from key_stats for values not found above
                 if key_stats:
-                    enterprise_to_ebitda = key_stats.get('enterpriseToEbitda')
-                    price_to_book = key_stats.get('priceToBook')
                     trailing_eps = key_stats.get('trailingEps')
                     forward_eps = key_stats.get('forwardEps')
-                    peg_ratio = key_stats.get('pegRatio')
                 
                 # Extract fields from financial_data and convert margins/growth to percentages
                 gross_margin = None
