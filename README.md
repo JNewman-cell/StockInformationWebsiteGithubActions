@@ -77,6 +77,17 @@ pip install -r requirements.txt
 python create_stocks_table.py ticker_file1.txt ticker_file2.txt
 ```
 
+### 4.1 Selecting Which Updates to Run
+
+- GitHub Actions: When triggering the workflow manually via the Actions tab, you can pass the `tables` input to the `Sync Database Tables` workflow. Use a comma-separated list with one or more of: `all` (default), `cik`, `summary`, `directory`, `overview`.
+    - Example: trigger manually with `tables: "cik,summary"`
+
+- Local usage: You can run a subset of sync scripts locally using the new helper script `github_action_scripts/sync_selected_tables.py`:
+    - Run all: `python github_action_scripts/sync_selected_tables.py`
+    - Run specific: `python github_action_scripts/sync_selected_tables.py --tables=cik,summary`
+    - Or set environment variable: `SELECTED_TABLES=cik,overview python github_action_scripts/sync_selected_tables.py`
+
+
 ### 5. Features
 
 - **Optimized Batch Processing**: Processes 50 symbols per batch with 6 concurrent workers (~8 symbols per worker)

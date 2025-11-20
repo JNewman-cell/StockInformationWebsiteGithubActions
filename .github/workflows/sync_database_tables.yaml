@@ -4,9 +4,16 @@ on:
   schedule:
     - cron: '0 8 * * *'  # Runs every day at 7:00 AM UTC
   workflow_dispatch:  # Enable manual trigger
+    inputs:
+      tables:
+        description: 'Comma-separated list of updates to run. Use values: all (default), cik, summary, directory, overview. Example: "cik,summary"'
+        required: false
+        default: 'all'
 
 jobs:
   update-cik-lookup-database:
+    # only run when scheduled or when the user selected 'all' or 'cik' in workflow_dispatch inputs
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.tables == 'all' || contains(github.event.inputs.tables, 'cik')))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -40,10 +47,12 @@ jobs:
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
+        SELECTED_TABLES: ${{ github.event.inputs.tables }}
       run: |
         python github_action_scripts/cik_lookup_table/sync_cik_lookup_table.py
 
   update-ticker-summary-database:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.tables == 'all' || contains(github.event.inputs.tables, 'summary')))
     needs: [update-cik-lookup-database]
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
@@ -78,11 +87,13 @@ jobs:
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
+        SELECTED_TABLES: ${{ github.event.inputs.tables }}
       run: |
         python github_action_scripts/ticker_summary_table/sync_ticker_summary_table.py
 
   update-ticker-directory-database:
     needs: [update-ticker-summary-database]
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.tables == 'all' || contains(github.event.inputs.tables, 'directory')))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -116,11 +127,13 @@ jobs:
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECCOMPANYLOOKUP_USER_EMAIL: ${{ secrets.SEC_API_USER_EMAIL }}
+        SELECTED_TABLES: ${{ github.event.inputs.tables }}
       run: |
         python github_action_scripts/ticker_directory_table/sync_ticker_directory_table.py
 
   update-ticker-overview-database:
     needs: [update-ticker-summary-database]
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.tables == 'all' || contains(github.event.inputs.tables, 'overview')))
     runs-on: ubuntu-latest
     environment: "GitHub Actions Secrets"
 
@@ -153,5 +166,6 @@ jobs:
     - name: Synchronize ticker overview database
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SELECTED_TABLES: ${{ github.event.inputs.tables }}
       run: |
         python github_action_scripts/ticker_overview_table/sync_ticker_overview_table.py
