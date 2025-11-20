@@ -28,6 +28,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from data_layer import (
     DatabaseConnectionManager,
     TickerSummaryRepository,
+    TickerOverviewRepository,
 )
 from data_layer.repositories import CikLookupRepository
 from github_action_scripts.utils.utils import (
@@ -150,6 +151,7 @@ def main():
         logger.info("Initializing data layer...")
         db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
         ticker_summary_repo = TickerSummaryRepository(db_manager)
+        ticker_overview_repo = TickerOverviewRepository(db_manager)
         cik_lookup_repo = CikLookupRepository(db_manager)
         
         # Check database connectivity and table structure
@@ -227,7 +229,7 @@ def main():
         deleted_count = 0
         if tickers_to_delete:
             logger.info(f"Deleting {len(tickers_to_delete)} obsolete/problematic ticker summaries...")
-            deleted_count = delete_obsolete_ticker_summaries(ticker_summary_repo, tickers_to_delete)
+            deleted_count = delete_obsolete_ticker_summaries(ticker_summary_repo, ticker_overview_repo, tickers_to_delete)
         else:
             logger.info("No obsolete ticker summaries to delete")
         

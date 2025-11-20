@@ -10,14 +10,14 @@ The script performs:
 - Converts margins and growth rates from 0.XXXX to XX.XX percentage format
 - Adds new ticker overviews with valid data that are not in the database
 - Updates ticker overviews that have changed data
-- Removes ticker overviews that fail validation or are no longer in ticker_summary
-- Uses bulk database operations (bulk_insert, bulk_update, bulk_delete) for efficiency
+- Uses bulk database operations (bulk_insert, bulk_update) for efficiency
+- Deletions are handled by the ticker_summary synchronization to maintain referential integrity
 """
 
 import logging
 import os
 import sys
-from typing import Dict, Set
+from typing import Dict
 
 # Add data layer to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -29,8 +29,6 @@ from data_layer import (
 )
 from utils.utils import (
     process_tickers_and_persist_overviews,
-    identify_tickers_to_delete,
-    delete_obsolete_ticker_overviews,
 )
 from entities.synchronization_result import SynchronizationResult
 from yahooquery.session_management import initialize_session  # type: ignore
@@ -114,7 +112,7 @@ def print_final_synchronization_statistics(
         Synchronization Results (with immediate persistence):
         - Added: {operation_results['added']} ticker overviews (persisted immediately during lookup)
         - Updated: {operation_results['updated']} ticker overviews (persisted immediately during lookup)
-        - Deleted: {operation_results['deleted']} ticker overviews (bulk delete)
+        - Deleted: {operation_results['deleted']} ticker overviews (deletions handled by ticker_summary sync)
         - Unchanged: {len(sync_result.unchanged)} ticker overviews
         - Failed ticker lookups: {len(sync_result.failed_ticker_lookups)}
         - Failed due to persistent API errors: {len(sync_result.to_remove_due_to_errors)}
@@ -141,7 +139,7 @@ def print_final_synchronization_statistics(
     print(f"Total operations performed: {total_operations}")
     print(f"  - {operation_results['added']} ticker overviews added (persisted immediately)")
     print(f"  - {operation_results['updated']} ticker overviews updated (persisted immediately)")
-    print(f"  - {operation_results['deleted']} ticker overviews deleted")
+    print(f"  - {operation_results['deleted']} ticker overviews deleted (handled by ticker_summary sync)")
     print(f"  - {len(sync_result.unchanged)} ticker overviews unchanged")
     print(f"  - {len(sync_result.failed_ticker_lookups)} tickers failed Yahoo Finance lookup")
     print(f"  - {len(sync_result.to_remove_due_to_errors)} tickers removed due to persistent API errors")
@@ -215,36 +213,11 @@ def main():
             - To remove due to persistent API errors: {stats['to_remove_due_to_errors']}
         """)
         
-        # 5. Identify and delete ticker overviews that are no longer in ticker_summary
-        logger.info("Identifying ticker overviews to delete...")
-        processed_tickers: Set[str] = set()
-        for ticker_overview in sync_result.to_add:
-            processed_tickers.add(ticker_overview.ticker)
-        for ticker_overview in sync_result.to_update:
-            processed_tickers.add(ticker_overview.ticker)
-        processed_tickers.update(sync_result.unchanged)
-        
-        tickers_to_delete = identify_tickers_to_delete(database_ticker_overviews, processed_tickers)
-        
-        # Add tickers that failed validation checks
-        if sync_result.to_remove_due_to_errors:
-            logger.info(f"Adding {len(sync_result.to_remove_due_to_errors)} tickers that failed validation checks to delete list")
-            tickers_to_delete.extend(sync_result.to_remove_due_to_errors)
-            # Remove duplicates
-            tickers_to_delete = list(set(tickers_to_delete))
-        
-        deleted_count = 0
-        if tickers_to_delete:
-            logger.info(f"Deleting {len(tickers_to_delete)} obsolete/problematic ticker overviews...")
-            deleted_count = delete_obsolete_ticker_overviews(ticker_overview_repo, tickers_to_delete)
-        else:
-            logger.info("No obsolete ticker overviews to delete")
-        
-        # 6. Print final statistics
+        # 5. Print final statistics
         final_stats = {
             'added': len(sync_result.to_add),
             'updated': len(sync_result.to_update),
-            'deleted': deleted_count
+            'deleted': 0  # No deletions performed in ticker overview sync
         }
         print_final_synchronization_statistics(ticker_overview_repo, final_stats, sync_result)
     

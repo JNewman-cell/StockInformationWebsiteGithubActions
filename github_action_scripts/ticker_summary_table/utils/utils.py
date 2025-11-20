@@ -14,7 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from data_layer.models.ticker_summary import TickerSummary
 from data_layer.models.cik_lookup import CikLookup
-from data_layer.repositories import TickerSummaryRepository, CikLookupRepository
+from data_layer.repositories import TickerSummaryRepository, CikLookupRepository, TickerOverviewRepository
 
 # Add entities and constants to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -406,6 +406,7 @@ def identify_tickers_to_delete(
 
 def delete_obsolete_ticker_summaries(
     ticker_summary_repo: TickerSummaryRepository,
+    ticker_overview_repo: TickerOverviewRepository,
     tickers_to_delete: List[str]
 ) -> int:
     """
@@ -432,6 +433,9 @@ def delete_obsolete_ticker_summaries(
         batch_num = (i // BATCH_SIZE) + 1
         
         try:
+            # Delete from ticker_overview first to avoid foreign key constraint violation
+            ticker_overview_repo.bulk_delete(batch)
+            # Then delete from ticker_summary
             deleted_count = ticker_summary_repo.bulk_delete(batch)
             total_deleted += deleted_count
             logger.info(f"Delete batch {batch_num}/{total_batches}: Deleted {deleted_count}/{len(batch)} ticker summaries")
