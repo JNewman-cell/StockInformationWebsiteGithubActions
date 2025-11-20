@@ -76,13 +76,13 @@ class TickerSummary:
         # No validation to forbid negative pe_ratio/forward_pe_ratio here.
         # If you want to enforce a range, update this method accordingly.
         
-        # Validate dividend_yield if provided (NUMERIC(4,2) allows 0..99.99)
-        if self.dividend_yield is not None and (self.dividend_yield < 0 or self.dividend_yield > Decimal('99.99')):
-            raise ValidationError("dividend_yield", self.dividend_yield, "Dividend yield must be between 0 and 99.99")
+        # Validate dividend_yield if provided (NUMERIC(5,2) allows 0..999.99)
+        if self.dividend_yield is not None and (self.dividend_yield < 0 or self.dividend_yield > Decimal('999.99')):
+            raise ValidationError("dividend_yield", self.dividend_yield, "Dividend yield must be between 0 and 999.99")
         
-        # Validate payout_ratio if provided (NUMERIC(4,2) allows 0..99.99)
-        if self.payout_ratio is not None and (self.payout_ratio < 0 or self.payout_ratio > Decimal('99.99')):
-            raise ValidationError("payout_ratio", self.payout_ratio, "Payout ratio must be between 0 and 99.99")
+        # Validate payout_ratio if provided (NUMERIC(5,2) allows 0..999.99)
+        if self.payout_ratio is not None and (self.payout_ratio < 0 or self.payout_ratio > Decimal('999.99')):
+            raise ValidationError("payout_ratio", self.payout_ratio, "Payout ratio must be between 0 and 999.99")
         
         # Validate fifty_day_average
         if self.fifty_day_average < 0:
@@ -151,9 +151,9 @@ class TickerSummary:
 
             # Note: negative values are allowed for fields like PE ratios.
             # For ratio fields (dividend_yield, payout_ratio) clamp out-of-range to None
-            # Schema uses NUMERIC(4,2) which supports up to 99.99, so allow 0..99.99
+            # Schema uses NUMERIC(5,2) which supports up to 999.99, so allow 0..999.99
             if clamp_ratio_to_null:
-                max_ratio = Decimal('99.99')
+                max_ratio = Decimal('999.99')
                 if dec < 0 or dec > max_ratio:
                     logger.warning(f"{field_name} out of expected range 0..{max_ratio}; setting to None: {dec}")
                     return None
