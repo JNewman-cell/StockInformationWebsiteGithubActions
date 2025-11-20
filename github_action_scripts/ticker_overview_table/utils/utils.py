@@ -72,12 +72,10 @@ def _fetch_yahoo_overview_data(
 
     # Attempt to fetch current valuation measures using the financials APIs
     try:
-        current_valuation = getattr(stock, 'current_valuation_measures', None)
-        if callable(current_valuation):
-            # Will return a dict keyed by symbol -> valuation measures record
-            val_data = stock.current_valuation_measures()  # type: ignore[assignment]
-            if isinstance(val_data, dict):
-                valuation_measures_data = val_data
+        # Will return a dict keyed by symbol -> valuation measures record
+        val_data = stock.current_valuation_measures()  # type: ignore[assignment]
+        if isinstance(val_data, dict):
+            valuation_measures_data = val_data
     except Exception:
         # Be defensive - if any exception occurs while fetching valuation measures,
         # continue without breaking existing behavior and leave valuation_measures_data empty.
