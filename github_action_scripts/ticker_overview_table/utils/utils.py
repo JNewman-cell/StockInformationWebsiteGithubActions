@@ -270,7 +270,7 @@ def process_tickers_and_persist_overviews(
         
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} tickers)...")
         logger.info(f"Waiting between batches to avoid rate limiting...")
-        time.sleep(7)
+        time.sleep(8)
         
         # Lookup ticker overview data
         batch_results, yahoo_failed = get_ticker_overview_data_batch_from_yahoo_query(batch, session=session)
