@@ -72,12 +72,10 @@ def _fetch_yahoo_overview_data(
 
     # Attempt to fetch current valuation measures using the financials APIs
     try:
-        current_valuation = getattr(stock, 'current_valuation_measures', None)
-        if callable(current_valuation):
-            # Will return a dict keyed by symbol -> valuation measures record
-            val_data = stock.current_valuation_measures()  # type: ignore[assignment]
-            if isinstance(val_data, dict):
-                valuation_measures_data = val_data
+        # Will return a dict keyed by symbol -> valuation measures record
+        val_data = stock.current_valuation_measures()  # type: ignore[assignment]
+        if isinstance(val_data, dict):
+            valuation_measures_data = val_data
     except Exception:
         # Be defensive - if any exception occurs while fetching valuation measures,
         # continue without breaking existing behavior and leave valuation_measures_data empty.
@@ -272,7 +270,7 @@ def process_tickers_and_persist_overviews(
         
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} tickers)...")
         logger.info(f"Waiting between batches to avoid rate limiting...")
-        time.sleep(4)
+        time.sleep(8)
         
         # Lookup ticker overview data
         batch_results, yahoo_failed = get_ticker_overview_data_batch_from_yahoo_query(batch, session=session)

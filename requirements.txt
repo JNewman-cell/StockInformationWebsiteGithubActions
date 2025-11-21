@@ -1,4 +1,4 @@
-git+https://github.com/JNewman-cell/yahooquery.git@master
+git+https://github.com/JNewman-cell/yahooquery.git@v2.4.2
 pandas>=2.3.3
 psycopg[binary]>=3.2.0
 psycopg-pool>=3.2.0
