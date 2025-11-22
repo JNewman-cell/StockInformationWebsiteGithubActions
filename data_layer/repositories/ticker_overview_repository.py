@@ -77,7 +77,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
             operating_margin, profit_margin, earnings_growth, revenue_growth,
             trailing_eps, forward_eps, peg_ratio, ebitda_margin
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         
         try:
@@ -130,7 +130,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
             operating_margin, profit_margin, earnings_growth, revenue_growth,
             trailing_eps, forward_eps, peg_ratio, ebitda_margin
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker) DO NOTHING;
         """
         
