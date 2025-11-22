@@ -7,6 +7,7 @@ import os
 import sys
 import time
 from typing import Dict, List, Set, Tuple, Optional, Any
+from decimal import Decimal
 import yahooquery as yq  # type: ignore
 
 # Add data layer to path for imports
@@ -213,6 +214,9 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                 forward_eps = sanitize_decimal(forward_eps, 7, 2)
                 peg_ratio = sanitize_decimal(peg_ratio, 8, 2)
                 ebitda_margin = sanitize_decimal(ebitda_margin, 5, 2)
+                # Treat exact 0.00 ebitda_margin as NULL
+                if ebitda_margin is not None and ebitda_margin == Decimal('0'):
+                    ebitda_margin = None
                 
                 # Store the ticker data (all fields are optional)
                 results[ticker] = {
