@@ -7,6 +7,7 @@ import os
 import sys
 import time
 from typing import Dict, List, Set, Tuple, Optional, Any
+from decimal import Decimal
 import yahooquery as yq  # type: ignore
 
 # Add data layer to path for imports
@@ -169,6 +170,9 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                     # Growth calculation: ((current - trailing)/trailing) * 100
                     raw_growth = (dividend_yield - trailing_annual_dividend_yield) / trailing_annual_dividend_yield * 100
                     annual_dividend_growth = sanitize_decimal(raw_growth, 5, 2)
+                    # If the calculated growth is exactly zero, treat it as NULL (None)
+                    if annual_dividend_growth is not None and annual_dividend_growth == Decimal('0'):
+                        annual_dividend_growth = None
 
                 # Store the ticker data
                 results[ticker] = {
