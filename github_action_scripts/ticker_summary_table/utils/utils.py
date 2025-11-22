@@ -151,7 +151,6 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                 # Convert dividend_yield, trailing_annual_dividend_yield and payout_ratio from decimal (0.XXXX) to percentage (XX.XX)
                 dividend_yield = convert_to_percentage(dividend_yield)
                 trailing_annual_dividend_yield = convert_to_percentage(trailing_annual_dividend_yield)
-                five_year_avg_dividend_yield = convert_to_percentage(five_year_avg_dividend_yield)
                 payout_ratio = convert_to_percentage(payout_ratio)
                 
                 # Sanitize all numeric values to fit database constraints
