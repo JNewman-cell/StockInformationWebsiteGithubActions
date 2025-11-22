@@ -180,7 +180,7 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         Raises:
             DatabaseQueryError: If database operation fails
         """
-         select_query = """
+        select_query = """
          SELECT ticker, cik, market_cap, previous_close, pe_ratio, 
              forward_pe_ratio, dividend_yield, payout_ratio, 
              fifty_day_average, two_hundred_day_average, annual_dividend_growth, five_year_avg_dividend_yield
