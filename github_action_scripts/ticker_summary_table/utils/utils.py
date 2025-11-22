@@ -143,10 +143,14 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                 pe_ratio = symbol_info.get('trailingPE')  # type: ignore
                 forward_pe = symbol_info.get('forwardPE')  # type: ignore
                 dividend_yield = symbol_info.get('dividendYield')  # type: ignore
+                trailing_annual_dividend_yield = symbol_info.get('trailingAnnualDividendYield')  # type: ignore
+                five_year_avg_dividend_yield = symbol_info.get('fiveYearAvgDividendYield')  # type: ignore
                 payout_ratio = symbol_info.get('payoutRatio')  # type: ignore
                 
-                # Convert dividend_yield and payout_ratio from decimal (0.XXXX) to percentage (XX.XX)
+                # Convert dividend_yield, trailing_annual_dividend_yield and payout_ratio from decimal (0.XXXX) to percentage (XX.XX)
                 dividend_yield = convert_to_percentage(dividend_yield)
+                trailing_annual_dividend_yield = convert_to_percentage(trailing_annual_dividend_yield)
+                five_year_avg_dividend_yield = convert_to_percentage(five_year_avg_dividend_yield)
                 payout_ratio = convert_to_percentage(payout_ratio)
                 
                 # Sanitize all numeric values to fit database constraints
@@ -154,9 +158,17 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                 pe_ratio = sanitize_decimal(pe_ratio, 10, 2)
                 forward_pe = sanitize_decimal(forward_pe, 10, 2)
                 dividend_yield = sanitize_decimal(dividend_yield, 5, 2)
+                trailing_annual_dividend_yield = sanitize_decimal(trailing_annual_dividend_yield, 5, 2)
+                five_year_avg_dividend_yield = sanitize_decimal(five_year_avg_dividend_yield, 5, 2)
                 payout_ratio = sanitize_decimal(payout_ratio, 5, 2)
                 fifty_day_avg = sanitize_decimal(fifty_day_avg, 10, 2)
                 two_hundred_day_avg = sanitize_decimal(two_hundred_day_avg, 10, 2)
+                # Calculate annual dividend growth if trailing and current dividend_yield are available
+                annual_dividend_growth = None
+                if dividend_yield is not None and trailing_annual_dividend_yield is not None and trailing_annual_dividend_yield != 0:
+                    # Growth calculation: ((current - trailing)/trailing) * 100
+                    raw_growth = (dividend_yield - trailing_annual_dividend_yield) / trailing_annual_dividend_yield * 100
+                    annual_dividend_growth = sanitize_decimal(raw_growth, 5, 2)
 
                 # Store the ticker data
                 results[ticker] = {
@@ -166,9 +178,12 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                     'pe_ratio': pe_ratio,
                     'forward_pe_ratio': forward_pe,
                     'dividend_yield': dividend_yield,
+                    'trailing_annual_dividend_yield': trailing_annual_dividend_yield,
+                    'five_year_avg_dividend_yield': five_year_avg_dividend_yield,
                     'payout_ratio': payout_ratio,
                     'fifty_day_average': fifty_day_avg,
-                    'two_hundred_day_average': two_hundred_day_avg
+                    'two_hundred_day_average': two_hundred_day_avg,
+                    'annual_dividend_growth': annual_dividend_growth
                 }
 
                 logger.debug(f"Successfully looked up ticker: {ticker}")
@@ -328,7 +343,9 @@ def process_tickers_and_persist_summaries(
                         existing.dividend_yield != new_summary.dividend_yield or
                         existing.payout_ratio != new_summary.payout_ratio or
                         existing.fifty_day_average != new_summary.fifty_day_average or
-                        existing.two_hundred_day_average != new_summary.two_hundred_day_average
+                        existing.two_hundred_day_average != new_summary.two_hundred_day_average or
+                        existing.annual_dividend_growth != new_summary.annual_dividend_growth or
+                        existing.five_year_avg_dividend_yield != new_summary.five_year_avg_dividend_yield
                     )
                     
                     if needs_update:
