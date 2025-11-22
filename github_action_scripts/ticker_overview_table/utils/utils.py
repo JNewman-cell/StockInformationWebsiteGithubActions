@@ -170,6 +170,7 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                 enterprise_to_ebitda = None
                 price_to_book = None
                 peg_ratio = None
+                ebitda_margin = None
 
                 if val_rec and isinstance(val_rec, dict):
                     enterprise_to_ebitda = val_rec.get('EnterprisesValueEBITDARatio')
@@ -189,6 +190,7 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                 profit_margin = None
                 earnings_growth = None
                 revenue_growth = None
+                ebitda_margin = None
                 
                 if fin_data:
                     # These are in 0.XXXX format, convert to XX.XX
@@ -197,6 +199,7 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                     profit_margin = convert_to_percentage(fin_data.get('profitMargins'))
                     earnings_growth = convert_to_percentage(fin_data.get('earningsGrowth'))
                     revenue_growth = convert_to_percentage(fin_data.get('revenueGrowth'))
+                    ebitda_margin = convert_to_percentage(fin_data.get('ebitdaMargins'))
                 
                 # Sanitize all values to fit database constraints
                 enterprise_to_ebitda = sanitize_decimal(enterprise_to_ebitda, 7, 2)
@@ -208,7 +211,8 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                 revenue_growth = sanitize_decimal(revenue_growth, 10, 2)
                 trailing_eps = sanitize_decimal(trailing_eps, 7, 2)
                 forward_eps = sanitize_decimal(forward_eps, 7, 2)
-                peg_ratio = sanitize_decimal(peg_ratio, 7, 2)
+                peg_ratio = sanitize_decimal(peg_ratio, 8, 2)
+                ebitda_margin = sanitize_decimal(ebitda_margin, 5, 2)
                 
                 # Store the ticker data (all fields are optional)
                 results[ticker] = {
@@ -222,7 +226,8 @@ def get_ticker_overview_data_batch_from_yahoo_query(
                     'revenue_growth': revenue_growth,
                     'trailing_eps': trailing_eps,
                     'forward_eps': forward_eps,
-                    'peg_ratio': peg_ratio
+                    'peg_ratio': peg_ratio,
+                    'ebitda_margin': ebitda_margin
                 }
 
                 logger.debug(f"Successfully looked up overview for ticker: {ticker}")
@@ -306,7 +311,8 @@ def process_tickers_and_persist_overviews(
                         existing.revenue_growth != new_overview.revenue_growth or
                         existing.trailing_eps != new_overview.trailing_eps or
                         existing.forward_eps != new_overview.forward_eps or
-                        existing.peg_ratio != new_overview.peg_ratio
+                        existing.peg_ratio != new_overview.peg_ratio or
+                        existing.ebitda_margin != new_overview.ebitda_margin
                     )
                     
                     if needs_update:

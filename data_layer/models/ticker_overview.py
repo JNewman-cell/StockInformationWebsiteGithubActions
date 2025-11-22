@@ -41,6 +41,7 @@ class TickerOverview:
     trailing_eps: Optional[Decimal] = None
     forward_eps: Optional[Decimal] = None
     peg_ratio: Optional[Decimal] = None
+    ebitda_margin: Optional[Decimal] = None
     
     def __post_init__(self):
         """Clean and validate the ticker overview data after initialization."""
@@ -74,6 +75,11 @@ class TickerOverview:
             if value is not None:
                 if value < Decimal('-999.99') or value > max_val:
                     raise ValidationError(field_name, value, f"{field_name} must be between -999.99 and 999.99")
+
+        # Include ebitda_margin in margin validations (same range as other margins)
+        if self.ebitda_margin is not None:
+            if self.ebitda_margin < Decimal('-999.99') or self.ebitda_margin > Decimal('999.99'):
+                raise ValidationError('ebitda_margin', self.ebitda_margin, 'ebitda_margin must be between -999.99 and 999.99')
         
         # Validate growth rates if provided
         # Growth rates can be negative (declining companies)
@@ -117,6 +123,7 @@ class TickerOverview:
             'trailing_eps': self.trailing_eps,
             'forward_eps': self.forward_eps,
             'peg_ratio': self.peg_ratio
+            , 'ebitda_margin': self.ebitda_margin
         }
     
     @classmethod
@@ -142,6 +149,7 @@ class TickerOverview:
             trailing_eps=data.get('trailing_eps'),
             forward_eps=data.get('forward_eps'),
             peg_ratio=data.get('peg_ratio')
+            , ebitda_margin=data.get('ebitda_margin')
         )
     
     def __eq__(self, other: object) -> bool:
@@ -169,6 +177,7 @@ class TickerOverview:
             self.trailing_eps == other.trailing_eps and
             self.forward_eps == other.forward_eps and
             self.peg_ratio == other.peg_ratio
+            and self.ebitda_margin == other.ebitda_margin
         )
     
     def __repr__(self) -> str:
@@ -179,5 +188,5 @@ class TickerOverview:
             f"price_to_book={self.price_to_book}, "
             f"gross_margin={self.gross_margin}, "
             f"operating_margin={self.operating_margin}, "
-            f"profit_margin={self.profit_margin})"
+            f"profit_margin={self.profit_margin}, ebitda_margin={self.ebitda_margin})"
         )
