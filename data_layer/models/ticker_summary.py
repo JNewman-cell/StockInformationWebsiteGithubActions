@@ -260,17 +260,7 @@ class TickerSummary:
                 # If any comparison/conversion fails, set to None to be safe
                 logger.warning(f"Could not scale payout_ratio value; setting to None")
                 payout_ratio = None
-        # Convert five_year_avg_dividend_yield from fraction to percentage when appropriate
-        if five_year_avg_dividend_yield is not None:
-            try:
-                if five_year_avg_dividend_yield <= Decimal('1'):
-                    five_year_avg_dividend_yield = five_year_avg_dividend_yield * Decimal('100')
-                    if five_year_avg_dividend_yield < 0 or five_year_avg_dividend_yield > Decimal('999.99'):
-                        logger.warning(f"five_year_avg_dividend_yield after scaling out of range; setting to None: {five_year_avg_dividend_yield}")
-                        five_year_avg_dividend_yield = None
-            except Exception:
-                logger.warning(f"Could not scale five_year_avg_dividend_yield value; setting to None")
-                five_year_avg_dividend_yield = None
+        
 
         return cls(
             ticker=data['ticker'],
