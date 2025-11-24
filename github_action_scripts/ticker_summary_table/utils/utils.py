@@ -129,7 +129,7 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                     failed_tickers.append(ticker)
                     continue
 
-                previous_close = symbol_info.get('previousClose')  # type: ignore
+                previous_close = symbol_info.get('regularMarketPreviousClose')  # type: ignore
                 fifty_day_avg = symbol_info.get('fiftyDayAverage')  # type: ignore
                 two_hundred_day_avg = symbol_info.get('twoHundredDayAverage')  # type: ignore
 
