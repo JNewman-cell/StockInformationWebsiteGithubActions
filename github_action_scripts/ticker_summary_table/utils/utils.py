@@ -133,8 +133,10 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                 fifty_day_avg = symbol_info.get('fiftyDayAverage')  # type: ignore
                 two_hundred_day_avg = symbol_info.get('twoHundredDayAverage')  # type: ignore
 
-                # Validate required fields
-                if previous_close is None or fifty_day_avg is None or two_hundred_day_avg is None:
+                # Validate required fields (must be present and positive)
+                if (previous_close is None or previous_close <= 0 or
+                    fifty_day_avg is None or fifty_day_avg <= 0 or
+                    two_hundred_day_avg is None or two_hundred_day_avg <= 0):
                     logger.warning(f"Missing required fields for ticker: {ticker}")
                     failed_tickers.append(ticker)
                     continue
@@ -288,6 +290,8 @@ def process_tickers_and_persist_summaries(
                 # Validate required fields are not empty/zero
                 market_cap = data['market_cap']
                 previous_close = data['previous_close']
+                fifty_day_average = data.get('fifty_day_average')
+                two_hundred_day_average = data.get('two_hundred_day_average')
                 
                 if market_cap is None or market_cap <= 0:
                     logger.warning(f"Ticker {ticker} has invalid market_cap ({market_cap}), skipping")
@@ -298,6 +302,20 @@ def process_tickers_and_persist_summaries(
                 
                 if previous_close is None or previous_close <= 0:
                     logger.warning(f"Ticker {ticker} has invalid previous_close ({previous_close}), skipping")
+                    if ticker in database_ticker_summaries:
+                        sync_result.to_remove_due_to_errors.append(ticker)
+                    sync_result.failed_ticker_lookups.append(ticker)
+                    continue
+
+                if fifty_day_average is None or fifty_day_average <= 0:
+                    logger.warning(f"Ticker {ticker} has invalid fifty_day_average ({fifty_day_average}), skipping")
+                    if ticker in database_ticker_summaries:
+                        sync_result.to_remove_due_to_errors.append(ticker)
+                    sync_result.failed_ticker_lookups.append(ticker)
+                    continue
+
+                if two_hundred_day_average is None or two_hundred_day_average <= 0:
+                    logger.warning(f"Ticker {ticker} has invalid two_hundred_day_average ({two_hundred_day_average}), skipping")
                     if ticker in database_ticker_summaries:
                         sync_result.to_remove_due_to_errors.append(ticker)
                     sync_result.failed_ticker_lookups.append(ticker)

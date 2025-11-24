@@ -84,13 +84,13 @@ class TickerSummary:
         if self.payout_ratio is not None and (self.payout_ratio < 0 or self.payout_ratio > Decimal('999.99')):
             raise ValidationError("payout_ratio", self.payout_ratio, "Payout ratio must be between 0 and 999.99")
         
-        # Validate fifty_day_average
-        if self.fifty_day_average < 0:
-            raise ValidationError("fifty_day_average", self.fifty_day_average, "50-day average cannot be negative")
+        # Validate fifty_day_average (must be strictly positive)
+        if self.fifty_day_average <= 0:
+            raise ValidationError("fifty_day_average", self.fifty_day_average, "50-day average must be greater than zero")
         
-        # Validate two_hundred_day_average
-        if self.two_hundred_day_average < 0:
-            raise ValidationError("two_hundred_day_average", self.two_hundred_day_average, "200-day average cannot be negative")
+        # Validate two_hundred_day_average (must be strictly positive)
+        if self.two_hundred_day_average <= 0:
+            raise ValidationError("two_hundred_day_average", self.two_hundred_day_average, "200-day average must be greater than zero")
     
     def to_dict(self) -> Dict[str, Any]:
         """
