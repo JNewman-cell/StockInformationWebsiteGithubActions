@@ -2,7 +2,7 @@ name: Sync Database Tables
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Runs every day at 7:00 AM UTC
+    - cron: '0 8 * * 2-6'  # Runs every day at 7:00 AM UTC
   workflow_dispatch:  # Enable manual trigger
     inputs:
       run_all:
