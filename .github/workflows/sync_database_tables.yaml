@@ -238,6 +238,7 @@ jobs:
         python github_action_scripts/ticker_directory_table/sync_ticker_directory_table.py
 
   update-ticker-overview-database:
+    # Run in parallel with ticker-directory (both depend only on ticker-summary)
     needs: [validate-inputs, update-ticker-summary-database]
     if: |
       always() && 
