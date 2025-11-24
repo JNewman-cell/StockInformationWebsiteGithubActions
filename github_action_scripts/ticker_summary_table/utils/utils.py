@@ -163,6 +163,16 @@ def get_ticker_summary_data_batch_from_yahoo_query(tickers: List[str], session: 
                 trailing_annual_dividend_yield = sanitize_decimal(trailing_annual_dividend_yield, 5, 2)
                 five_year_avg_dividend_yield = sanitize_decimal(five_year_avg_dividend_yield, 5, 2)
                 payout_ratio = sanitize_decimal(payout_ratio, 5, 2)
+                # If payout_ratio exactly equals 0.00 after conversion/sanitization,
+                # treat it as missing data (NULL in DB). This avoids storing
+                # meaningless zero payout ratios. Also prefer explicit None for
+                # downstream logic.
+                try:
+                    if payout_ratio == Decimal('0'):
+                        payout_ratio = None
+                except Exception:
+                    # Be conservative on errors and leave payout_ratio as-is
+                    pass
                 fifty_day_avg = sanitize_decimal(fifty_day_avg, 10, 2)
                 two_hundred_day_avg = sanitize_decimal(two_hundred_day_avg, 10, 2)
                 # Calculate annual dividend growth if trailing and current dividend_yield are available
