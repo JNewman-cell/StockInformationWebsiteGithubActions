@@ -75,9 +75,9 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         INSERT INTO ticker_summary (
             ticker, cik, market_cap, previous_close, pe_ratio, 
             forward_pe_ratio, dividend_yield, payout_ratio, 
-            fifty_day_average, two_hundred_day_average
+            fifty_day_average, two_hundred_day_average, annual_dividend_growth, five_year_avg_dividend_yield
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         
         try:
@@ -95,7 +95,9 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
                         ticker_summary.dividend_yield,
                         ticker_summary.payout_ratio,
                         ticker_summary.fifty_day_average,
-                        ticker_summary.two_hundred_day_average
+                        ticker_summary.two_hundred_day_average,
+                        ticker_summary.annual_dividend_growth,
+                        ticker_summary.five_year_avg_dividend_yield
                     )
                 )
                 self.logger.info(f"Successfully inserted ticker summary: {ticker_summary.ticker}")
@@ -127,9 +129,9 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         INSERT INTO ticker_summary (
             ticker, cik, market_cap, previous_close, pe_ratio, 
             forward_pe_ratio, dividend_yield, payout_ratio, 
-            fifty_day_average, two_hundred_day_average
+            fifty_day_average, two_hundred_day_average, annual_dividend_growth, five_year_avg_dividend_yield
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker) DO NOTHING;
         """
         
@@ -147,7 +149,9 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
                         ts.dividend_yield,
                         ts.payout_ratio,
                         ts.fifty_day_average,
-                        ts.two_hundred_day_average
+                        ts.two_hundred_day_average,
+                        ts.annual_dividend_growth,
+                        ts.five_year_avg_dividend_yield
                     )
                     for ts in entities
                 ]
@@ -177,9 +181,9 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
             DatabaseQueryError: If database operation fails
         """
         select_query = """
-        SELECT ticker, cik, market_cap, previous_close, pe_ratio, 
-               forward_pe_ratio, dividend_yield, payout_ratio, 
-               fifty_day_average, two_hundred_day_average
+         SELECT ticker, cik, market_cap, previous_close, pe_ratio, 
+             forward_pe_ratio, dividend_yield, payout_ratio, 
+             fifty_day_average, two_hundred_day_average, annual_dividend_growth, five_year_avg_dividend_yield
         FROM ticker_summary
         WHERE ticker = %s;
         """
@@ -213,9 +217,9 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         """
         # Use parameterized query parts for safe SQL construction
         query_parts = ["""
-        SELECT ticker, cik, market_cap, previous_close, pe_ratio, 
-               forward_pe_ratio, dividend_yield, payout_ratio, 
-               fifty_day_average, two_hundred_day_average
+         SELECT ticker, cik, market_cap, previous_close, pe_ratio, 
+            forward_pe_ratio, dividend_yield, payout_ratio, 
+            fifty_day_average, two_hundred_day_average, annual_dividend_growth, five_year_avg_dividend_yield
         FROM ticker_summary
         ORDER BY ticker"""]
         
@@ -313,7 +317,7 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         UPDATE ticker_summary
         SET cik = %s, market_cap = %s, previous_close = %s, pe_ratio = %s,
             forward_pe_ratio = %s, dividend_yield = %s, payout_ratio = %s,
-            fifty_day_average = %s, two_hundred_day_average = %s
+            fifty_day_average = %s, two_hundred_day_average = %s, annual_dividend_growth = %s, five_year_avg_dividend_yield = %s
         WHERE ticker = %s;
         """
         
@@ -331,6 +335,8 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
                         ticker_summary.payout_ratio,
                         ticker_summary.fifty_day_average,
                         ticker_summary.two_hundred_day_average,
+                        ticker_summary.annual_dividend_growth,
+                        ticker_summary.five_year_avg_dividend_yield,
                         ticker_summary.ticker
                     )
                 )
@@ -360,7 +366,7 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
         UPDATE ticker_summary
         SET cik = %s, market_cap = %s, previous_close = %s, pe_ratio = %s,
             forward_pe_ratio = %s, dividend_yield = %s, payout_ratio = %s,
-            fifty_day_average = %s, two_hundred_day_average = %s
+            fifty_day_average = %s, two_hundred_day_average = %s, annual_dividend_growth = %s, five_year_avg_dividend_yield = %s
         WHERE ticker = %s;
         """
         
@@ -377,6 +383,8 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
                         ts.payout_ratio,
                         ts.fifty_day_average,
                         ts.two_hundred_day_average,
+                        ts.annual_dividend_growth,
+                        ts.five_year_avg_dividend_yield,
                         ts.ticker
                     )
                     for ts in entities
@@ -509,5 +517,7 @@ class TickerSummaryRepository(BaseRepository[TickerSummary]):
             dividend_yield=row[6],
             payout_ratio=row[7],
             fifty_day_average=row[8],
-            two_hundred_day_average=row[9]
+            two_hundred_day_average=row[9],
+            annual_dividend_growth=row[10],
+            five_year_avg_dividend_yield=row[11]
         )

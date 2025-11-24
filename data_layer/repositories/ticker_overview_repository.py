@@ -75,9 +75,9 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
         INSERT INTO ticker_overview (
             ticker, enterprise_to_ebitda, price_to_book, gross_margin,
             operating_margin, profit_margin, earnings_growth, revenue_growth,
-            trailing_eps, forward_eps, peg_ratio
+            trailing_eps, forward_eps, peg_ratio, ebitda_margin
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         
         try:
@@ -95,7 +95,8 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
                         ticker_overview.revenue_growth,
                         ticker_overview.trailing_eps,
                         ticker_overview.forward_eps,
-                        ticker_overview.peg_ratio
+                        ticker_overview.peg_ratio,
+                        ticker_overview.ebitda_margin
                     )
                 )
                 self.logger.info(f"Successfully inserted ticker overview: {ticker_overview.ticker}")
@@ -127,9 +128,9 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
         INSERT INTO ticker_overview (
             ticker, enterprise_to_ebitda, price_to_book, gross_margin,
             operating_margin, profit_margin, earnings_growth, revenue_growth,
-            trailing_eps, forward_eps, peg_ratio
+            trailing_eps, forward_eps, peg_ratio, ebitda_margin
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker) DO NOTHING;
         """
         
@@ -147,7 +148,8 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
                         to.revenue_growth,
                         to.trailing_eps,
                         to.forward_eps,
-                        to.peg_ratio
+                        to.peg_ratio,
+                        to.ebitda_margin
                     )
                     for to in entities
                 ]
@@ -179,7 +181,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
         select_query = """
         SELECT ticker, enterprise_to_ebitda, price_to_book, gross_margin,
                operating_margin, profit_margin, earnings_growth, revenue_growth,
-               trailing_eps, forward_eps, peg_ratio
+             trailing_eps, forward_eps, peg_ratio, ebitda_margin
         FROM ticker_overview
         WHERE ticker = %s;
         """
@@ -214,7 +216,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
         query_parts = ["""
         SELECT ticker, enterprise_to_ebitda, price_to_book, gross_margin,
                operating_margin, profit_margin, earnings_growth, revenue_growth,
-               trailing_eps, forward_eps, peg_ratio
+             trailing_eps, forward_eps, peg_ratio, ebitda_margin
         FROM ticker_overview
         ORDER BY ticker"""]
         
@@ -312,7 +314,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
         UPDATE ticker_overview
         SET enterprise_to_ebitda = %s, price_to_book = %s, gross_margin = %s,
             operating_margin = %s, profit_margin = %s, earnings_growth = %s,
-            revenue_growth = %s, trailing_eps = %s, forward_eps = %s, peg_ratio = %s
+            revenue_growth = %s, trailing_eps = %s, forward_eps = %s, peg_ratio = %s, ebitda_margin = %s
         WHERE ticker = %s;
         """
         
@@ -331,6 +333,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
                         ticker_overview.trailing_eps,
                         ticker_overview.forward_eps,
                         ticker_overview.peg_ratio,
+                        ticker_overview.ebitda_margin,
                         ticker_overview.ticker
                     )
                 )
@@ -360,7 +363,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
         UPDATE ticker_overview
         SET enterprise_to_ebitda = %s, price_to_book = %s, gross_margin = %s,
             operating_margin = %s, profit_margin = %s, earnings_growth = %s,
-            revenue_growth = %s, trailing_eps = %s, forward_eps = %s, peg_ratio = %s
+            revenue_growth = %s, trailing_eps = %s, forward_eps = %s, peg_ratio = %s, ebitda_margin = %s
         WHERE ticker = %s;
         """
         
@@ -378,6 +381,7 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
                         to.trailing_eps,
                         to.forward_eps,
                         to.peg_ratio,
+                        to.ebitda_margin,
                         to.ticker
                     )
                     for to in entities
@@ -481,5 +485,6 @@ class TickerOverviewRepository(BaseRepository[TickerOverview]):
             revenue_growth=row[7],
             trailing_eps=row[8],
             forward_eps=row[9],
-            peg_ratio=row[10]
+            peg_ratio=row[10],
+            ebitda_margin=row[11]
         )

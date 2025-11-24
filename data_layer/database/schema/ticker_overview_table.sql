@@ -11,6 +11,7 @@ CREATE TABLE ticker_overview (
     trailing_eps NUMERIC(7,2),
     forward_eps NUMERIC(7,2),
     peg_ratio NUMERIC(8,2),
+    ebitda_margin NUMERIC(5,2),
     CONSTRAINT idx_ticker_overview_ticker PRIMARY KEY (ticker),
     CONSTRAINT ticker FOREIGN KEY (ticker) REFERENCES ticker_summary(ticker)
 );

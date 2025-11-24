@@ -39,6 +39,8 @@ class TickerSummary:
     forward_pe_ratio: Optional[Decimal] = None
     dividend_yield: Optional[Decimal] = None
     payout_ratio: Optional[Decimal] = None
+    annual_dividend_growth: Optional[Decimal] = None
+    five_year_avg_dividend_yield: Optional[Decimal] = None
     
     def __post_init__(self):
         """Clean and validate the ticker summary data after initialization."""
@@ -83,14 +85,20 @@ class TickerSummary:
         # Validate payout_ratio if provided (NUMERIC(5,2) allows 0..999.99)
         if self.payout_ratio is not None and (self.payout_ratio < 0 or self.payout_ratio > Decimal('999.99')):
             raise ValidationError("payout_ratio", self.payout_ratio, "Payout ratio must be between 0 and 999.99")
+        # Validate annual_dividend_growth if provided (allow negative or positive growth within DB range)
+        if self.annual_dividend_growth is not None and (self.annual_dividend_growth < Decimal('-999.99') or self.annual_dividend_growth > Decimal('999.99')):
+            raise ValidationError("annual_dividend_growth", self.annual_dividend_growth, "Annual dividend growth must be between -999.99 and 999.99")
         
         # Validate fifty_day_average (must be strictly positive)
         if self.fifty_day_average <= 0:
             raise ValidationError("fifty_day_average", self.fifty_day_average, "50-day average must be greater than zero")
         
-        # Validate two_hundred_day_average (must be strictly positive)
-        if self.two_hundred_day_average <= 0:
-            raise ValidationError("two_hundred_day_average", self.two_hundred_day_average, "200-day average must be greater than zero")
+        # Validate two_hundred_day_average
+        if self.two_hundred_day_average < 0:
+            raise ValidationError("two_hundred_day_average", self.two_hundred_day_average, "200-day average cannot be negative")
+        # Validate five_year_avg_dividend_yield if provided
+        if self.five_year_avg_dividend_yield is not None and (self.five_year_avg_dividend_yield < 0 or self.five_year_avg_dividend_yield > Decimal('999.99')):
+            raise ValidationError("five_year_avg_dividend_yield", self.five_year_avg_dividend_yield, "Five-year average dividend yield must be between 0 and 999.99")
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -109,7 +117,9 @@ class TickerSummary:
             'dividend_yield': float(self.dividend_yield) if self.dividend_yield else None,
             'payout_ratio': float(self.payout_ratio) if self.payout_ratio else None,
             'fifty_day_average': float(self.fifty_day_average) if self.fifty_day_average else None,
-            'two_hundred_day_average': float(self.two_hundred_day_average) if self.two_hundred_day_average else None
+            'two_hundred_day_average': float(self.two_hundred_day_average) if self.two_hundred_day_average else None,
+            'annual_dividend_growth': float(self.annual_dividend_growth) if self.annual_dividend_growth else None,
+            'five_year_avg_dividend_yield': float(self.five_year_avg_dividend_yield) if self.five_year_avg_dividend_yield else None
         }
     
     @classmethod
@@ -199,6 +209,10 @@ class TickerSummary:
         # dividend_yield and payout_ratio are stored with precision/scale constrained in DB
         dividend_yield = to_decimal(data.get('dividend_yield'), 'dividend_yield', required=False, clamp_ratio_to_null=True)
         payout_ratio = to_decimal(data.get('payout_ratio'), 'payout_ratio', required=False, clamp_ratio_to_null=True)
+        # five_year_avg_dividend_yield stored similarly to dividend_yield
+        five_year_avg_dividend_yield = to_decimal(
+            data.get('five_year_avg_dividend_yield'), 'five_year_avg_dividend_yield', required=False, clamp_ratio_to_null=True
+        )
 
         # Convert dividend_yield from fraction to percentage when appropriate.
         # Many data sources return dividend_yield as a fraction (e.g., 0.02 for 2%).
@@ -246,6 +260,7 @@ class TickerSummary:
                 # If any comparison/conversion fails, set to None to be safe
                 logger.warning(f"Could not scale payout_ratio value; setting to None")
                 payout_ratio = None
+        
 
         return cls(
             ticker=data['ticker'],
@@ -256,6 +271,8 @@ class TickerSummary:
             forward_pe_ratio=forward_pe_ratio,
             dividend_yield=dividend_yield,
             payout_ratio=payout_ratio,
+            annual_dividend_growth=to_decimal(data.get('annual_dividend_growth'), 'annual_dividend_growth', required=False),
+            five_year_avg_dividend_yield=five_year_avg_dividend_yield,
             fifty_day_average=fifty_day_average,
             two_hundred_day_average=two_hundred_day_average
         )
