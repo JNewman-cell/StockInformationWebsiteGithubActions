@@ -355,8 +355,12 @@ def convert_to_percentage(value: Any) -> Optional[Decimal]:
     
     try:
         decimal_val = Decimal(str(value))
-        # Convert from 0.XXXX to XX.XX by multiplying by 100
-        percentage = decimal_val * 100
+        # Only convert fractional values (absolute <= 1) to percentages so
+        # we avoid double-scaling values that are already percentages.
+        if decimal_val.copy_abs() <= Decimal('1'):
+            percentage = decimal_val * Decimal('100')
+        else:
+            percentage = decimal_val
         # Round to 2 decimal places
         return round(percentage, 2)
     except (InvalidOperation, ValueError, TypeError):
