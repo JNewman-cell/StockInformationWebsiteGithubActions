@@ -89,9 +89,9 @@ class TickerSummary:
         if self.annual_dividend_growth is not None and (self.annual_dividend_growth < Decimal('-999.99') or self.annual_dividend_growth > Decimal('999.99')):
             raise ValidationError("annual_dividend_growth", self.annual_dividend_growth, "Annual dividend growth must be between -999.99 and 999.99")
         
-        # Validate fifty_day_average
-        if self.fifty_day_average < 0:
-            raise ValidationError("fifty_day_average", self.fifty_day_average, "50-day average cannot be negative")
+        # Validate fifty_day_average (must be strictly positive)
+        if self.fifty_day_average <= 0:
+            raise ValidationError("fifty_day_average", self.fifty_day_average, "50-day average must be greater than zero")
         
         # Validate two_hundred_day_average
         if self.two_hundred_day_average < 0:

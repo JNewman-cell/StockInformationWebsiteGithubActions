@@ -134,14 +134,6 @@ def print_final_synchronization_statistics(
     print(f"  - {len(sync_result.unchanged)} ticker summaries unchanged")
     print(f"  - {len(sync_result.failed_ticker_lookups)} tickers failed Yahoo Finance lookup")
     print(f"  - {len(sync_result.to_remove_due_to_errors)} tickers removed due to persistent API errors")
-    
-    # Get final database statistics
-    try:
-        final_count = ticker_summary_repo.count()
-        logger.info(f"Final database state: {final_count} ticker summaries")
-        print(f"\nFinal database state: {final_count} total ticker summaries")
-    except Exception as e:
-        logger.warning(f"Could not retrieve final statistics: {e}")
 
 
 def main():
@@ -149,7 +141,8 @@ def main():
     # Initialize data layer components
     try:
         logger.info("Initializing data layer...")
-        db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
+        # Use minimal connection pool for GitHub Actions (short-lived, single-threaded)
+        db_manager = DatabaseConnectionManager(min_connections=1, max_connections=1)
         ticker_summary_repo = TickerSummaryRepository(db_manager)
         ticker_overview_repo = TickerOverviewRepository(db_manager)
         cik_lookup_repo = CikLookupRepository(db_manager)

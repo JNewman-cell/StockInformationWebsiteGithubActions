@@ -111,14 +111,6 @@ Synchronization Results:
     print(f"  - {operation_results['updated']} ticker directory entries updated to INACTIVE")
     print(f"  - {len(sync_result.unchanged)} ticker directory entries unchanged")
     print(f"  - {len(sync_result.failed_ticker_lookups)} tickers failed CIK lookup")
-    
-    # Get final database statistics
-    try:
-        final_count = ticker_directory_repo.count()
-        logger.info(f"Final database state: {final_count} ticker directory entries")
-        print(f"\nFinal database state: {final_count} total ticker directory entries")
-    except Exception as e:
-        logger.warning(f"Could not retrieve final statistics: {e}")
 
 
 def main():
@@ -126,7 +118,8 @@ def main():
     # Initialize data layer components
     try:
         logger.info("Initializing data layer...")
-        db_manager = DatabaseConnectionManager()  # Uses DATABASE_URL from environment
+        # Use minimal connection pool for GitHub Actions (short-lived, single-threaded)
+        db_manager = DatabaseConnectionManager(min_connections=1, max_connections=1)
         ticker_directory_repo = TickerDirectoryRepository(db_manager)
         
         # Check database connectivity and table structure
